@@ -5,7 +5,6 @@ using System.Security.Principal;
 using System.Text;
 using Windows.Win32;
 using Windows.Win32.System.Services;
-using Windows.Win32.System.Threading;
 
 namespace BioTap.Core;
 
@@ -31,7 +30,9 @@ public sealed class PipeClient(string pipeName, string expectedServerExe) : IAsy
             await p.ConnectAsync(ct);
             if (!PInvoke.GetNamedPipeServerProcessId(p.SafePipeHandle, out var pid))
                 throw new ServerVerificationException("Could not read the pipe server PID");
-            if (!VerifyServer((int)pid, QueryServicePid(ServiceName), QueryImagePath(pid), expectedServerExe, out var reason))
+            // Hold the process handle for the whole check so the PID cannot be reused in between
+            using var server = NativeProcess.Open(pid);
+            if (!VerifyServer((int)pid, QueryServicePid(ServiceName), NativeProcess.ImagePath(server), expectedServerExe, out var reason))
                 throw new ServerVerificationException(reason);
         }
         catch
@@ -46,7 +47,7 @@ public sealed class PipeClient(string pipeName, string expectedServerExe) : IAsy
     /// <summary>Yields valid messages; skips invalid lines; ends (and disconnects) on EOF or an oversized line.</summary>
     public async IAsyncEnumerable<Message> ReadAllAsync([EnumeratorCancellation] CancellationToken ct)
     {
-        var r = reader ?? throw new InvalidOperationException("Not connected");
+        var r = reader ?? throw new IOException("Not connected");
         while (true)
         {
             var (status, line) = await r.ReadLineAsync(ct);
@@ -61,7 +62,7 @@ public sealed class PipeClient(string pipeName, string expectedServerExe) : IAsy
 
     public async Task SendAsync(Message m, CancellationToken ct)
     {
-        var p = pipe ?? throw new InvalidOperationException("Not connected");
+        var p = pipe ?? throw new IOException("Not connected"); // same exception type as a broken pipe
         await p.WriteAsync(Encoding.UTF8.GetBytes(Protocol.Serialize(m) + "\n"), ct);
         await p.FlushAsync(ct);
     }
@@ -78,6 +79,7 @@ public sealed class PipeClient(string pipeName, string expectedServerExe) : IAsy
             reason = $"Pipe server PID {serverPid} is not the {ServiceName} PID {servicePid}";
             return false;
         }
+        expectedExe = Environment.ExpandEnvironmentVariables(expectedExe);
         if (serverImage is null || !string.Equals(Path.GetFullPath(serverImage), Path.GetFullPath(expectedExe), StringComparison.OrdinalIgnoreCase))
         {
             reason = $"Pipe server image '{serverImage}' is not '{expectedExe}'";
@@ -97,17 +99,6 @@ public sealed class PipeClient(string pipeName, string expectedServerExe) : IAsy
         if (!PInvoke.QueryServiceStatusEx(svc, SC_STATUS_TYPE.SC_STATUS_PROCESS_INFO, buf, out _)) return null;
         var pid = MemoryMarshal.Read<SERVICE_STATUS_PROCESS>(buf).dwProcessId;
         return pid == 0 ? null : (int)pid;
-    }
-
-    static string? QueryImagePath(uint pid)
-    {
-        using var proc = PInvoke.OpenProcess_SafeHandle(PROCESS_ACCESS_RIGHTS.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-        if (proc.IsInvalid) return null;
-        Span<char> path = stackalloc char[1024];
-        var size = (uint)path.Length;
-        return PInvoke.QueryFullProcessImageName(proc, PROCESS_NAME_FORMAT.PROCESS_NAME_WIN32, path, ref size)
-            ? new string(path[..(int)size])
-            : null;
     }
 
     public async ValueTask DisposeAsync()

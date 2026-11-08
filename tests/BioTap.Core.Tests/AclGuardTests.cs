@@ -98,3 +98,40 @@ public class AclGuardTests
         finally { File.Delete(p); }
     }
 }
+
+public class AclGuardFolderTests
+{
+    static readonly SecurityIdentifier Admins = new("S-1-5-32-544");
+    static readonly SecurityIdentifier SystemSid = new("S-1-5-18");
+    static readonly SecurityIdentifier Users = new("S-1-5-32-545");
+
+    static T Secured<T>(T s) where T : FileSystemSecurity
+    {
+        s.SetAccessRuleProtection(true, false);
+        s.SetOwner(Admins);
+        s.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, AccessControlType.Allow));
+        s.AddAccessRule(new FileSystemAccessRule(Admins, FileSystemRights.FullControl, AccessControlType.Allow));
+        return s;
+    }
+
+    [Fact]
+    public void SecureFileInSecureFolder_IsSecure()
+        => Assert.True(AclGuard.IsSecure(Secured(new FileSecurity()), Secured(new DirectorySecurity())));
+
+    [Fact]
+    public void SecureFileInFolderUsersCanDeleteFrom_IsInsecure()
+    {
+        // With "delete child" on the folder a user can delete config.json and drop in their own.
+        var dir = Secured(new DirectorySecurity());
+        dir.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.DeleteSubdirectoriesAndFiles, AccessControlType.Allow));
+        Assert.False(AclGuard.IsSecure(Secured(new FileSecurity()), dir));
+    }
+
+    [Fact]
+    public void SecureFileInFolderUsersCanCreateFilesIn_IsInsecure()
+    {
+        var dir = Secured(new DirectorySecurity());
+        dir.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.CreateFiles, AccessControlType.Allow));
+        Assert.False(AclGuard.IsSecure(Secured(new FileSecurity()), dir));
+    }
+}

@@ -10,6 +10,7 @@ public sealed class TapCounter : IDisposable
     readonly Lock gate = new();
     int count;
     int timeoutMs;
+    volatile bool disposed;
 
     public TapCounter(int timeoutMs, TimeProvider time)
     {
@@ -33,12 +34,14 @@ public sealed class TapCounter : IDisposable
 
     public void Tap()
     {
+        if (disposed) return;
         Interlocked.Increment(ref count);
         timer.Change(TimeSpan.FromMilliseconds(TimeoutMs), Timeout.InfiniteTimeSpan);
     }
 
     void Complete()
     {
+        if (disposed) return; // a callback already in flight when Dispose ran
         // Timer callbacks can overlap; serialize so sequences are emitted one at a time, in order.
         lock (gate)
         {
@@ -47,5 +50,9 @@ public sealed class TapCounter : IDisposable
         }
     }
 
-    public void Dispose() => timer.Dispose();
+    public void Dispose()
+    {
+        disposed = true;
+        timer.Dispose();
+    }
 }

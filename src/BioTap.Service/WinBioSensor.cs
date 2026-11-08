@@ -1,5 +1,8 @@
 using Windows.Win32;
+using System.Runtime.InteropServices;
 using Windows.Win32.Devices.BiometricFramework;
+using Windows.Win32.Devices.DeviceAndDriverInstallation;
+using Windows.Win32.Foundation;
 
 namespace BioTap.Service;
 
@@ -69,6 +72,16 @@ public sealed class WinBioSensor(ILogger<WinBioSensor> log) : IBiometricSensor
             open = false;
             PInvoke.WinBioCloseSession(session);
         }
+    }
+
+    static readonly Guid BiometricClass = new("53D29EF7-377C-4D14-864B-EB3A85769359"); // GUID_DEVCLASS_BIOMETRIC
+
+    public bool IsPresent()
+    {
+        using var devices = PInvoke.SetupDiGetClassDevs(BiometricClass, null, HWND.Null, SETUP_DI_GET_CLASS_DEVS_FLAGS.DIGCF_PRESENT);
+        if (devices.IsInvalid) return true; // unknown: do not report a missing sensor on a failed query
+        var info = new SP_DEVINFO_DATA { cbSize = (uint)Marshal.SizeOf<SP_DEVINFO_DATA>() };
+        return PInvoke.SetupDiEnumDeviceInfo(devices, 0, ref info);
     }
 
     public void Dispose() => Close();

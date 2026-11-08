@@ -16,4 +16,6 @@ public interface IBiometricSensor : IDisposable
     void Cancel();
     /// <summary>Closes the session (after errors, so <see cref="Open"/> can start a fresh one).</summary>
     void Close();
+    /// <summary>Whether a biometric device is plugged in (an unplug does not make a pending Identify fail).</summary>
+    bool IsPresent();
 }

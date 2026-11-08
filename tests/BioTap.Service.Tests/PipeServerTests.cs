@@ -162,6 +162,36 @@ public sealed class PipeServerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task WhenFull_NewClientEvictsTheOldest()
+    {
+        var s = Start();
+        var first = await ConnectRaw();
+        await WaitUntil(() => s.ClientCount == 1);
+        var others = new List<NamedPipeClientStream>();
+        for (var i = 1; i < PipeServer.MaxClients; i++) others.Add(await ConnectRaw());
+        await WaitUntil(() => s.ClientCount == PipeServer.MaxClients);
+
+        await using var newest = await ConnectRaw();
+        // the oldest connection is closed by the server
+        Assert.Equal(LineStatus.EndOfStream, (await new LineReader(first).ReadLineAsync(cts.Token)).Status);
+        await WaitUntil(() => s.ClientCount == PipeServer.MaxClients);
+        s.Broadcast(new TapsMessage(7));
+        Assert.Equal("""{"type":"taps","n":7}""", (await new LineReader(newest).ReadLineAsync(cts.Token)).Line);
+        await first.DisposeAsync();
+        foreach (var c in others) await c.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_WaitsForClientHandlers()
+    {
+        var s = Start();
+        await using var c = await ConnectRaw();
+        await WaitUntil(() => s.ClientCount == 1);
+        await s.DisposeAsync();
+        Assert.Equal(0, s.RunningHandlers);
+    }
+
+    [Fact]
     public async Task NewClient_ReceivesLastStatusOnConnect()
     {
         var s = Start();

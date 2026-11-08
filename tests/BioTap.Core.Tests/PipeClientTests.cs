@@ -38,6 +38,27 @@ public class PipeClientTests
         => Assert.False(PipeClient.VerifyServer(42, 42, @"C:\Program Files\BioTap\..\Evil\BioTap.Service.exe", Exe, out _));
 
     [Fact]
+    public void Verify_ExpandsEnvironmentVariablesInExpectedPath()
+    {
+        var real = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "BioTap", "BioTap.Service.exe");
+        Assert.True(PipeClient.VerifyServer(42, 42, real, @"%ProgramFiles%\BioTap\BioTap.Service.exe", out _));
+    }
+
+    [Fact]
+    public async Task Send_WhenNotConnected_ThrowsIOException()
+    {
+        await using var client = new PipeClient("BioTap-test-" + Guid.NewGuid(), Exe);
+        await Assert.ThrowsAsync<IOException>(() => client.SendAsync(new SetTimeoutMessage(800), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Read_WhenNotConnected_ThrowsIOException()
+    {
+        await using var client = new PipeClient("BioTap-test-" + Guid.NewGuid(), Exe);
+        await Assert.ThrowsAsync<IOException>(async () => { await foreach (var _ in client.ReadAllAsync(CancellationToken.None)) { } });
+    }
+
+    [Fact]
     public async Task Client_RejectsServerThatIsNotTheService()
     {
         var name = "BioTap-test-" + Guid.NewGuid();
