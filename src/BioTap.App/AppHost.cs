@@ -30,14 +30,14 @@ sealed class AppHost(DispatcherQueue ui)
     ConnectionState connectionState = ConnectionState.Connecting;
     SensorState? sensorState;
 
+    Settings.SettingsWindow? settings;
+
     public PresetCatalog Presets => presets;
     public LoadResult Loaded => loaded;
     public string ConfigPath => configPath;
     public ServiceConnection Connection => connection;
     public TapRouter Router => router;
-
-    /// <summary>Raised on the UI thread; the settings window (Task 8) subscribes. null = no specific action.</summary>
-    public event Action<Guid?>? SettingsRequested;
+    public string StatusText => PanelModel.TrayTooltip(connectionState, sensorState);
 
     public void Start()
     {
@@ -46,12 +46,12 @@ sealed class AppHost(DispatcherQueue ui)
 
         overlay = new OverlayWindow();
         panel = new PanelWindow();
-        panel.ItemClicked += id => SettingsRequested?.Invoke(id);
-        panel.GearClicked += () => SettingsRequested?.Invoke(null);
+        panel.ItemClicked += id => OpenSettings(id);
+        panel.GearClicked += () => OpenSettings(null);
 
         tray = new TrayIcon();
         tray.Clicked += TogglePanel;
-        tray.SettingsRequested += () => SettingsRequested?.Invoke(null);
+        tray.SettingsRequested += () => OpenSettings(null);
         tray.ExitRequested += Exit;
 
         router = new TapRouter(() => loaded.Config, presets);
@@ -83,6 +83,17 @@ sealed class AppHost(DispatcherQueue ui)
     {
         loaded = ConfigStore.Load(configPath, AclGuard.IsWritableOnlyByAdmins, presets);
         foreach (var e in loaded.Errors) Program.Log.Write("WARN", "Config: " + e);
+    }
+
+    /// <summary>One preferences window; reopened after it is closed. <paramref name="actionId"/> opens that action's editor.</summary>
+    void OpenSettings(Guid? actionId)
+    {
+        if (settings is null)
+        {
+            settings = new Settings.SettingsWindow(this);
+            settings.Closed += () => settings = null;
+        }
+        settings.Show(actionId);
     }
 
     public void ShowPanel() => panel.Show(PanelModel.Items(loaded.Config));
