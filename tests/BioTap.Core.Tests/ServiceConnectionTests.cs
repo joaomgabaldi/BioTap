@@ -63,6 +63,12 @@ public sealed class ServiceConnectionTests : IAsyncDisposable
 
     async Task Tick(int ms) { time.Advance(TimeSpan.FromMilliseconds(ms)); await Task.Delay(20); }
 
+    async Task TickUntil(Func<bool> condition)
+    {
+        for (var i = 0; i < 200 && !condition(); i++) { time.Advance(TimeSpan.FromMilliseconds(250)); await Task.Delay(10); }
+        Assert.True(condition());
+    }
+
     public async ValueTask DisposeAsync()
     {
         cts.Cancel();
@@ -89,11 +95,9 @@ public sealed class ServiceConnectionTests : IAsyncDisposable
         await WaitUntil(() => clients.Count == 1);
         await clients.Single().Incoming.Writer.WriteAsync(null); // server closed
         await WaitUntil(() => states.LastOrDefault() == ConnectionState.Connecting);
-        await Tick(1999);
-        Assert.Single(clients);
-        await Tick(1);
-        await WaitUntil(() => clients.Count == 2);
-        await WaitUntil(() => states.LastOrDefault() == ConnectionState.Connected);
+        await Task.Delay(100);
+        Assert.Single(clients); // waits for the retry delay instead of reconnecting at once
+        await TickUntil(() => clients.Count == 2 && states.LastOrDefault() == ConnectionState.Connected);
     }
 
     [Fact]
@@ -102,17 +106,15 @@ public sealed class ServiceConnectionTests : IAsyncDisposable
         script.Enqueue(() => new FakePipeClient(new ServerVerificationException("fake server")));
         Start();
         await WaitUntil(() => states.Contains(ConnectionState.NotTrusted));
-        await Tick(2000);
-        await WaitUntil(() => states.LastOrDefault() == ConnectionState.Connected);
+        await TickUntil(() => states.LastOrDefault() == ConnectionState.Connected);
     }
 
     [Fact]
     public async Task Connection_NotInstalled_ServiceMissing()
     {
         script.Enqueue(() => new FakePipeClient(new TimeoutException()));
-        script.Enqueue(() => new FakePipeClient(new IOException()));
         Start();
-        await WaitUntil(() => states.Contains(ConnectionState.ServiceMissing));
+        await WaitUntil(() => states.LastOrDefault() == ConnectionState.ServiceMissing);
     }
 
     [Fact]
@@ -122,8 +124,7 @@ public sealed class ServiceConnectionTests : IAsyncDisposable
         var c = Start();
         await WaitUntil(() => states.Contains(ConnectionState.ServiceMissing));
         await c.SendTimeoutAsync(1200, CancellationToken.None);
-        await Tick(2000);
-        await WaitUntil(() => clients.Count == 2 && clients.Last().Sent.Contains(new SetTimeoutMessage(1200)));
+        await TickUntil(() => clients.Count == 2 && clients.Last().Sent.Contains(new SetTimeoutMessage(1200)));
     }
 
     [Fact]

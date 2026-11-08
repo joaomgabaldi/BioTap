@@ -11,7 +11,8 @@ public enum ConnectionState { Connecting, Connected, ServiceMissing, NotTrusted 
 
 /// <summary>
 /// Keeps the app connected to BioTap.Service: reconnects every 2 s, reports state, sensor status and taps.
-/// Events are raised on a background thread; the UI marshals them itself.
+/// The loop never ends on its own: any failure means "try again". Events are raised on a background thread,
+/// each handler isolated (a UI bug cannot break the connection).
 /// </summary>
 public sealed class ServiceConnection(Func<IPipeClient> factory, TimeProvider time)
 {
@@ -19,35 +20,39 @@ public sealed class ServiceConnection(Func<IPipeClient> factory, TimeProvider ti
     static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
 
     readonly Lock gate = new();
+    readonly SemaphoreSlim sendLock = new(1, 1); // one writer at a time on the pipe
     IPipeClient? current;
-    int? pendingTimeoutMs;
+    int? pendingTimeoutMs; // latest wanted value not yet confirmed sent
     ConnectionState? state;
 
     public event Action<ConnectionState>? StateChanged;
     public event Action<SensorState>? SensorStateChanged;
     public event Action<int>? Tapped;
 
-    public async Task RunAsync(CancellationToken ct)
+    /// <summary>Runs until <paramref name="ct"/> is cancelled, on a pool thread (never on the caller's).</summary>
+    public Task RunAsync(CancellationToken ct) => Task.Run(() => LoopAsync(ct), CancellationToken.None);
+
+    async Task LoopAsync(CancellationToken ct)
     {
+        SetState(ConnectionState.Connecting);
         while (!ct.IsCancellationRequested)
         {
-            SetState(ConnectionState.Connecting);
-            var client = factory();
+            IPipeClient? client = null;
+            var connected = false;
             try
             {
-                using (var timeout = new CancellationTokenSource(ConnectTimeout, time))
-                using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token))
-                    await client.ConnectAsync(linked.Token);
-
-                int? pending;
-                lock (gate) { current = client; pending = pendingTimeoutMs; pendingTimeoutMs = null; }
+                client = factory();
+                // WaitAsync: the client's own connect may do uncancellable work (SCM, process queries)
+                await client.ConnectAsync(ct).WaitAsync(ConnectTimeout, time, ct);
+                connected = true;
+                await FlushPendingAsync(client, ct);
+                lock (gate) current = client;
                 SetState(ConnectionState.Connected);
-                if (pending is { } ms) await client.SendAsync(new SetTimeoutMessage(ms), ct);
 
                 await foreach (var m in client.ReadAllAsync(ct))
                 {
-                    if (m is TapsMessage t) Tapped?.Invoke(t.N);
-                    else if (m is StatusMessage s) SensorStateChanged?.Invoke(s.State);
+                    if (m is TapsMessage t) Raise(Tapped, t.N);
+                    else if (m is StatusMessage s) Raise(SensorStateChanged, s.State);
                 }
                 SetState(ConnectionState.Connecting); // the service closed the pipe (restart, stop)
             }
@@ -59,14 +64,18 @@ public sealed class ServiceConnection(Func<IPipeClient> factory, TimeProvider ti
             {
                 SetState(ConnectionState.NotTrusted);
             }
-            catch (Exception e) when (e is IOException or TimeoutException or OperationCanceledException or UnauthorizedAccessException)
+            catch (Exception)
             {
-                SetState(ConnectionState.ServiceMissing);
+                // Whatever went wrong, the answer is to retry; only the state shown differs
+                SetState(connected ? ConnectionState.Connecting : ConnectionState.ServiceMissing);
             }
             finally
             {
                 lock (gate) current = null;
-                await client.DisposeAsync();
+                if (client is not null)
+                {
+                    try { await client.DisposeAsync(); } catch (Exception) { }
+                }
             }
 
             try { await Task.Delay(RetryDelay, time, ct); }
@@ -74,22 +83,42 @@ public sealed class ServiceConnection(Func<IPipeClient> factory, TimeProvider ti
         }
     }
 
-    /// <summary>Sends now when connected; otherwise (or on failure) sends right after the next connection. Never throws.</summary>
+    /// <summary>Sends now when connected, otherwise right after the next connection; the latest value wins. Never throws.</summary>
     public async Task SendTimeoutAsync(int ms, CancellationToken ct)
     {
         IPipeClient? client;
         lock (gate)
         {
+            pendingTimeoutMs = ms;
             client = current;
-            if (client is null) { pendingTimeoutMs = ms; return; }
         }
+        if (client is null) return;
         try
         {
-            await client.SendAsync(new SetTimeoutMessage(ms), ct);
+            await FlushPendingAsync(client, ct);
         }
-        catch (Exception e) when (e is IOException or ObjectDisposedException or OperationCanceledException)
+        catch (Exception)
         {
-            lock (gate) pendingTimeoutMs = ms;
+            // stays pending; the next connection sends it
+        }
+    }
+
+    /// <summary>Sends the pending timeout; clears it only after a successful send of that exact value.</summary>
+    async Task FlushPendingAsync(IPipeClient client, CancellationToken ct)
+    {
+        await sendLock.WaitAsync(ct);
+        try
+        {
+            int? value;
+            lock (gate) value = pendingTimeoutMs;
+            if (value is not { } ms) return;
+            await client.SendAsync(new SetTimeoutMessage(ms), ct);
+            lock (gate)
+                if (pendingTimeoutMs == ms) pendingTimeoutMs = null;
+        }
+        finally
+        {
+            sendLock.Release();
         }
     }
 
@@ -100,6 +129,15 @@ public sealed class ServiceConnection(Func<IPipeClient> factory, TimeProvider ti
             if (state == s) return;
             state = s;
         }
-        StateChanged?.Invoke(s);
+        Raise(StateChanged, s);
+    }
+
+    static void Raise<T>(Action<T>? handlers, T value)
+    {
+        foreach (var h in handlers?.GetInvocationList() ?? [])
+        {
+            try { ((Action<T>)h)(value); }
+            catch (Exception) { }
+        }
     }
 }
