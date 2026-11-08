@@ -35,6 +35,14 @@ public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, Tim
             Emit(new(OutcomeKind.NothingConfigured, $"Nada configurado para {n} toques", null, null));
             return;
         }
+        Start(action);
+    }
+
+    /// <summary>The preferences "Testar" button: runs this action now, enabled or not, through the same safe path.</summary>
+    public void Test(ActionConfig action) => Start(action);
+
+    void Start(ActionConfig action)
+    {
         if (presets.Get(action.Preset) is not { } preset)
         {
             Emit(new(OutcomeKind.Failed, action.Name, "Preset desconhecido", action.Icon));

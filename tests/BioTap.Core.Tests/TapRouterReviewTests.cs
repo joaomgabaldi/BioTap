@@ -108,3 +108,21 @@ public class TapRouterReviewTests
         Assert.Contains("x", e.Message);
     }
 }
+
+public class TapRouterTestRunTests
+{
+    [Fact]
+    public async Task Test_RunsTheGivenAction_EvenWhenDisabled()
+    {
+        var p = new FakePreset("fake");
+        var outcomes = new ConcurrentQueue<ActionOutcome>();
+        var action = new ActionConfig(Guid.NewGuid(), 4, "Testável", false, new IconRef("glyph", "E70B"), "fake", new JsonObject());
+        var r = new TapRouter(() => AppConfig.Default, new PresetCatalog([p]));
+        r.Outcome += outcomes.Enqueue;
+        r.Test(action);
+        var deadline = Environment.TickCount64 + 5000;
+        while (p.Runs == 0 && Environment.TickCount64 < deadline) await Task.Delay(5);
+        Assert.Equal(1, p.Runs);
+        Assert.Equal(OutcomeKind.Ran, outcomes.Single().Kind);
+    }
+}
