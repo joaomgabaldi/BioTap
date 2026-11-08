@@ -58,6 +58,33 @@ public class ProtocolTests
         Assert.False(Protocol.TryParse(line, out _));
     }
 
+    // Built inside the test: attribute and theory data are serialized as UTF-8, which turns lone surrogates into U+FFFD.
+    [Fact]
+    public void TryParse_LoneSurrogate_ReturnsFalseWithoutThrowing()
+    {
+        Assert.False(Protocol.TryParse("{\"type\":\"taps\",\"n\":2}" + (char)0xD800, out _));
+        Assert.False(Protocol.TryParse("{\"type\":\"taps\",\"n\":2,\"x\":\"" + (char)0xDC00 + "\"}", out _));
+    }
+
+    [Fact]
+    public void TryParse_MeasuresBytesNotChars()
+    {
+        // 600 two-byte chars: under 1024 chars, over 1024 bytes
+        var line = "{\"type\":\"taps\",\"n\":3,\"pad\":\"" + new string('é', 600) + "\"}";
+        Assert.True(line.Length < Protocol.MaxLineBytes);
+        Assert.False(Protocol.TryParse(line, out _));
+    }
+
+    [Fact]
+    public void TryParse_ExactlyMaxBytes_Accepted()
+    {
+        var head = "{\"type\":\"taps\",\"n\":3,\"pad\":\"";
+        var line = head + new string('a', Protocol.MaxLineBytes - head.Length - 2) + "\"}";
+        Assert.Equal(Protocol.MaxLineBytes, line.Length);
+        Assert.True(Protocol.TryParse(line, out _));
+        Assert.False(Protocol.TryParse(line.Insert(head.Length, "a"), out _));
+    }
+
     [Fact]
     public void TryParse_IgnoresExtraFields()
     {

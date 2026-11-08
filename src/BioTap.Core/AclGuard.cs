@@ -12,7 +12,9 @@ public static class AclGuard
     const FileSystemRights WriteRights =
         FileSystemRights.WriteData | FileSystemRights.AppendData | FileSystemRights.WriteAttributes |
         FileSystemRights.WriteExtendedAttributes | FileSystemRights.Delete | FileSystemRights.ChangePermissions |
-        FileSystemRights.TakeOwnership;
+        FileSystemRights.TakeOwnership |
+        (FileSystemRights)0x40000000 | // GENERIC_WRITE
+        (FileSystemRights)0x10000000;  // GENERIC_ALL
 
     static bool IsTrusted(IdentityReference? id) => id is SecurityIdentifier s && (s == SystemSid || s == Admins);
 
@@ -34,9 +36,9 @@ public static class AclGuard
             if (!file.Exists || file.Attributes.HasFlag(FileAttributes.ReparsePoint)) return false;
             return IsWritableOnlyByAdmins(file.GetAccessControl());
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (Exception)
         {
-            return false;
+            return false; // fail closed on any error reading the ACL
         }
     }
 }

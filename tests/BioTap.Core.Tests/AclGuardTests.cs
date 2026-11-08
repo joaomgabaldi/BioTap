@@ -53,6 +53,19 @@ public class AclGuardTests
         Assert.False(AclGuard.IsWritableOnlyByAdmins(s));
     }
 
+    [Theory]
+    [InlineData(0x40000000)] // GENERIC_WRITE
+    [InlineData(0x10000000)] // GENERIC_ALL
+    public void UsersGenericWriteRights_IsInsecure(int right)
+    {
+        var s = Secured();
+        var sd = new RawSecurityDescriptor(s.GetSecurityDescriptorSddlForm(AccessControlSections.All));
+        sd.DiscretionaryAcl!.InsertAce(sd.DiscretionaryAcl.Count, new CommonAce(AceFlags.None, AceQualifier.AccessAllowed, right, Users, false, null));
+        var withGeneric = new FileSecurity();
+        withGeneric.SetSecurityDescriptorSddlForm(sd.GetSddlForm(AccessControlSections.All));
+        Assert.False(AclGuard.IsWritableOnlyByAdmins(withGeneric));
+    }
+
     [Fact]
     public void UsersReadOnly_IsSecure()
     {

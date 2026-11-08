@@ -13,24 +13,21 @@ public sealed record ServiceConfig(int TapTimeoutMs)
     /// <summary>Never throws: any problem (missing, insecure ACL, bad JSON, out of range) falls back to <see cref="Default"/>.</summary>
     public static ServiceConfig Load(string path, Func<string, bool> isSecure, ILogger log)
     {
-        if (!File.Exists(path))
-        {
-            log.LogInformation("Config not found, using defaults");
-            return Default;
-        }
-        if (!isSecure(path))
-        {
-            log.LogWarning("Config is writable by non-admins; ignoring it and using defaults");
-            return Default;
-        }
         try
         {
-            if (new FileInfo(path).Length > MaxFileBytes)
+            // Hold the file open denying writes/deletes, so the ACL we check is the file we read.
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (!isSecure(path))
+            {
+                log.LogWarning("Config is writable by non-admins; ignoring it and using defaults");
+                return Default;
+            }
+            if (fs.Length > MaxFileBytes)
             {
                 log.LogWarning("Config larger than {Max} bytes; using defaults", MaxFileBytes);
                 return Default;
             }
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            using var doc = JsonDocument.Parse(fs);
             if (doc.RootElement.ValueKind == JsonValueKind.Object
                 && doc.RootElement.TryGetProperty("tapTimeoutMs", out var p)
                 && p.ValueKind == JsonValueKind.Number
@@ -39,7 +36,11 @@ public sealed record ServiceConfig(int TapTimeoutMs)
                 return new ServiceConfig(ms);
             log.LogWarning("Config tapTimeoutMs missing or out of range; using default");
         }
-        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            log.LogInformation("Config not found, using defaults");
+        }
+        catch (Exception e)
         {
             log.LogWarning("Config unreadable ({Error}); using defaults", e.GetType().Name);
         }

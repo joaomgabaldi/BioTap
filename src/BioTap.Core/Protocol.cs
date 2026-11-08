@@ -32,13 +32,20 @@ public static class Protocol
         _ => throw new ArgumentException($"Unknown message {m.GetType().Name}", nameof(m)),
     };
 
+    static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    /// <summary>Never throws: anything malformed, oversized or unknown returns false.</summary>
     public static bool TryParse(string line, out Message? m)
     {
         m = null;
-        if (string.IsNullOrEmpty(line) || Encoding.UTF8.GetByteCount(line) > MaxLineBytes) return false;
+        if (string.IsNullOrEmpty(line) || line.Length > MaxLineBytes) return false;
+        byte[] bytes;
+        try { bytes = StrictUtf8.GetBytes(line); }
+        catch (EncoderFallbackException) { return false; } // lone surrogates
+        if (bytes.Length > MaxLineBytes) return false;
         try
         {
-            using var doc = JsonDocument.Parse(line);
+            using var doc = JsonDocument.Parse(bytes);
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !TryGetString(root, "type", out var type)) return false;
             m = type switch
