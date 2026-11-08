@@ -14,7 +14,7 @@ public sealed class ServerVerificationException(string message) : Exception(mess
 /// Client side of the service pipe. Before trusting anything, it checks that the process serving the pipe is the
 /// running BioTap.Service (PID from the SCM) and its image is the installed exe (spec §2, §7).
 /// </summary>
-public sealed class PipeClient(string pipeName, string expectedServerExe) : IAsyncDisposable
+public sealed class PipeClient(string pipeName, string expectedServerExe) : IPipeClient
 {
     public const string ServiceName = "BioTap.Service";
 
