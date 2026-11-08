@@ -88,7 +88,7 @@ public sealed class PresetTests : IDisposable
         Assert.DoesNotContain("Write-Output", args); // never concatenated
         var b64 = args.Split(' ').Last();
         Assert.Equal(command, Encoding.Unicode.GetString(Convert.FromBase64String(b64)));
-        Assert.StartsWith("-NoProfile", args);
+        Assert.StartsWith("-NoProfile -NonInteractive -EncodedCommand ", args);
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public sealed class PresetTests : IDisposable
         await Cmd.RunAsync(new JsonObject { ["shell"] = "cmd", ["command"] = "dir" }, default);
         var c = launcher.Calls.Single();
         Assert.EndsWith("cmd.exe", c.File, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("/d /c dir", c.Args);
+        Assert.Equal("/d /s /c \"dir\"", c.Args);
     }
 
     [Theory]

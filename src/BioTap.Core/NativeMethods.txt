@@ -10,3 +10,4 @@ SERVICE_QUERY_STATUS
 WTSGetActiveConsoleSessionId
 OpenProcessToken
 TOKEN_ACCESS_MASK
+GetWindowThreadProcessId
