@@ -10,7 +10,7 @@ public enum FocusAction { None, Acquire, Release }
 public sealed class FocusPolicy(TimeProvider time, TimeSpan reacquireDelay)
 {
     /// <summary>Process names (no .exe) whose presence means Windows Hello may need the sensor (spec §2).</summary>
-    public static readonly string[] HelloProcesses = ["LogonUI", "consent", "CredentialUIBroker", "UserOOBEBroker"];
+    public static readonly string[] HelloProcesses = ["LogonUI", "consent", "CredentialUIBroker", "UserOOBEBroker", "BioEnrollmentHost"];
 
     long? lastHelloSeen; // monotonic timestamp, immune to wall-clock jumps
 

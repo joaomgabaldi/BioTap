@@ -124,6 +124,20 @@ public sealed class SensorWorkerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task DeviceError_ExplicitlyReleasesHeldFocus()
+    {
+        // Focus is per process, not per session: closing the session must not leave focus held.
+        sensor.ErrorsRemaining = 1;
+        Start();
+        await TickUntil(() => sensor.Count("AcquireFocus") >= 1);
+        await TickUntil(() => sensor.Count("AcquireFocus") >= 2);
+        var calls = sensor.Calls.ToList();
+        var close = calls.IndexOf("Close");
+        var release = calls.IndexOf("ReleaseFocus");
+        Assert.True(release > close && release < calls.LastIndexOf("AcquireFocus"), string.Join(",", calls));
+    }
+
+    [Fact]
     public async Task DeviceError_ReopensSessionAndReacquiresFocus()
     {
         sensor.ErrorsRemaining = 1; // e.g. resume from sleep invalidated the session

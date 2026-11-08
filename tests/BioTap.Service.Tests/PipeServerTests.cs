@@ -149,6 +149,30 @@ public sealed class PipeServerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Server_NeverLeavesTheNameUnowned()
+    {
+        var s = Start();
+        var batch = new List<NamedPipeClientStream>();
+        for (var i = 0; i < PipeServer.MaxClients; i++) batch.Add(await ConnectRaw());
+        await WaitUntil(() => s.ClientCount == PipeServer.MaxClients);
+        foreach (var c in batch) await c.DisposeAsync();
+        await WaitUntil(() => s.ClientCount == 0);
+        // A squatter creating the name now must fail: the server still owns a listening instance.
+        Assert.ThrowsAny<Exception>(() => new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.FirstPipeInstance));
+    }
+
+    [Fact]
+    public async Task NewClient_ReceivesLastStatusOnConnect()
+    {
+        var s = Start();
+        s.Broadcast(new StatusMessage(SensorState.Ok)); // sent before anyone is connected
+        s.Broadcast(new TapsMessage(3));                // taps are not replayed
+        await using var c = await ConnectRaw();
+        var (status, line) = await new LineReader(c).ReadLineAsync(cts.Token);
+        Assert.Equal((LineStatus.Line, """{"type":"status","state":"ok"}"""), (status, line));
+    }
+
+    [Fact]
     public async Task Server_InvalidOrUnexpectedMessage_IsIgnoredAndClientKept()
     {
         var s = Start();

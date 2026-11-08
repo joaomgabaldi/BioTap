@@ -46,18 +46,26 @@ public sealed class PipeServer : IAsyncDisposable
         return s;
     }
 
+    // MaxClients served + 1 listening + 1 just accepted and about to be rejected when full
+    const int MaxInstances = MaxClients + 2;
+
+    volatile byte[]? lastStatusLine;
+
     NamedPipeServerStream NewInstance(bool first)
     {
         var options = PipeOptions.Asynchronous | (first ? PipeOptions.FirstPipeInstance : PipeOptions.None);
         return security is null
-            ? new NamedPipeServerStream(name, PipeDirection.InOut, MaxClients, PipeTransmissionMode.Byte, options)
-            : NamedPipeServerStreamAcl.Create(name, PipeDirection.InOut, MaxClients, PipeTransmissionMode.Byte, options, 0, 0, security);
+            ? new NamedPipeServerStream(name, PipeDirection.InOut, MaxInstances, PipeTransmissionMode.Byte, options)
+            : NamedPipeServerStreamAcl.Create(name, PipeDirection.InOut, MaxInstances, PipeTransmissionMode.Byte, options, 0, 0, security);
     }
 
-    /// <summary>Runs until cancelled. Throws if another process already owns the pipe name (pipe squatting).</summary>
+    /// <summary>
+    /// Runs until cancelled. A listening instance always exists, so the pipe name is never unowned (a gap would let
+    /// a local user create it with their own ACL). Throws if the name is taken at start or the server cannot keep it.
+    /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
-        NamedPipeServerStream? listening;
+        NamedPipeServerStream listening;
         try
         {
             listening = NewInstance(first: true);
@@ -73,36 +81,49 @@ public sealed class PipeServer : IAsyncDisposable
             {
                 try
                 {
-                    listening ??= NewInstance(first: false);
                     await listening.WaitForConnectionAsync(ct);
-                    var client = new Client(listening);
-                    listening = null; // now owned by the client
-                    clients[client] = 0;
-                    _ = ServeAsync(client, ct);
-                    while (clients.Count >= MaxClients) await Task.Delay(200, ct);
+                }
+                catch (IOException)
+                {
+                    // the client vanished mid-connect: reuse the same instance, so the name stays owned
+                    try { listening.Disconnect(); } catch (Exception e) when (e is IOException or InvalidOperationException) { }
+                    continue;
+                }
+                var connected = listening;
+                try
+                {
+                    listening = NewInstance(first: false); // next instance exists before the accepted one is handed off
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {
-                    // e.g. "all instances busy" while a dropped client is still closing: retry instead of giving up the name
-                    log.LogWarning("Pipe accept failed ({Error}); retrying", e.GetType().Name);
-                    listening?.Dispose();
-                    listening = null;
-                    await Task.Delay(250, ct);
+                    log.LogError("Cannot keep a listening pipe instance ({Error}); stopping", e.GetType().Name);
+                    connected.Dispose();
+                    throw; // fail closed: the service stops instead of leaving the name to someone else
                 }
+                if (clients.Count >= MaxClients)
+                {
+                    connected.Dispose();
+                    continue;
+                }
+                var client = new Client(connected);
+                if (lastStatusLine is { } status) client.Queue.Writer.TryWrite(status);
+                clients[client] = 0;
+                _ = ServeAsync(client, ct);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         finally
         {
-            listening?.Dispose();
+            listening.Dispose();
             foreach (var c in clients.Keys) Drop(c);
         }
     }
 
-    /// <summary>Never blocks: a client whose queue is full is disconnected.</summary>
+    /// <summary>Never blocks: a client whose queue is full is disconnected. The last status is replayed to new clients.</summary>
     public void Broadcast(Message m)
     {
         var line = Encoding.UTF8.GetBytes(Protocol.Serialize(m) + "\n");
+        if (m is StatusMessage) lastStatusLine = line;
         foreach (var c in clients.Keys)
             if (!c.Queue.Writer.TryWrite(line))
             {

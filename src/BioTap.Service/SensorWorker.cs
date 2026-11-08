@@ -107,8 +107,13 @@ public sealed class SensorWorker : BackgroundService
                 {
                     if (!sessionOpen)
                     {
-                        // WinBioAcquireFocus is denied before the session is open; a lost session also loses focus
-                        if (policy.HoldingFocus) policy.Failed(FocusAction.Acquire);
+                        // WinBioAcquireFocus is denied before the session is open. Focus is per process, not per
+                        // session, so a lost session must release it explicitly or Hello stays without the sensor.
+                        if (policy.HoldingFocus)
+                        {
+                            sensor.ReleaseFocus();
+                            policy.Failed(FocusAction.Acquire);
+                        }
                         focusHeld = false;
                         continue;
                     }
