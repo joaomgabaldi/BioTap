@@ -1,2 +1,4 @@
 SetWindowLong
 GetWindowLong
+GetCursorPos
+WINDOW_EX_STYLE
