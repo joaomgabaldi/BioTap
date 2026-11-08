@@ -228,7 +228,7 @@ public sealed class SensorWorker : BackgroundService
     public override void Dispose()
     {
         counter.Dispose();
-        sensor.Dispose();
+        sensor.Close(); // the DI container owns and disposes the sensor
         base.Dispose();
     }
 }

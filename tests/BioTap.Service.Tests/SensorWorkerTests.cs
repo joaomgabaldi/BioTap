@@ -124,6 +124,18 @@ public sealed class SensorWorkerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task WorkerDispose_ClosesButDoesNotDisposeTheSensor()
+    {
+        // The DI container owns the sensor and disposes it; the worker only closes its session.
+        var w = Start();
+        await w.StopAsync(CancellationToken.None);
+        w.Dispose();
+        worker = null;
+        Assert.Equal(0, sensor.Count("Dispose"));
+        Assert.True(sensor.Count("Close") >= 1);
+    }
+
+    [Fact]
     public async Task IdentifyRacingRelease_IsNotReportedAsNoSensor()
     {
         // The real sensor fails an Identify that started just before focus was released (0x80098036).

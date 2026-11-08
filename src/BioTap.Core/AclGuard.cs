@@ -13,6 +13,7 @@ public static class AclGuard
         FileSystemRights.WriteData | FileSystemRights.AppendData | FileSystemRights.WriteAttributes |
         FileSystemRights.WriteExtendedAttributes | FileSystemRights.Delete | FileSystemRights.ChangePermissions |
         FileSystemRights.TakeOwnership |
+        FileSystemRights.DeleteSubdirectoriesAndFiles | // on a folder: delete a child and replace it
         (FileSystemRights)0x40000000 | // GENERIC_WRITE
         (FileSystemRights)0x10000000;  // GENERIC_ALL
 
@@ -27,14 +28,20 @@ public static class AclGuard
         return true;
     }
 
-    /// <summary>Fails closed: missing file, reparse point or unreadable ACL count as insecure.</summary>
+    /// <summary>The file and the folder holding it (whoever can replace the file controls it too).</summary>
+    public static bool IsSecure(FileSystemSecurity file, FileSystemSecurity folder)
+        => IsWritableOnlyByAdmins(file) && IsWritableOnlyByAdmins(folder);
+
+    /// <summary>Checks the file and its folder. Fails closed: missing, reparse point or unreadable ACL count as insecure.</summary>
     public static bool IsWritableOnlyByAdmins(string path)
     {
         try
         {
             var file = new FileInfo(path);
             if (!file.Exists || file.Attributes.HasFlag(FileAttributes.ReparsePoint)) return false;
-            return IsWritableOnlyByAdmins(file.GetAccessControl());
+            var folder = file.Directory!;
+            if (folder.Attributes.HasFlag(FileAttributes.ReparsePoint)) return false;
+            return IsSecure(file.GetAccessControl(), folder.GetAccessControl());
         }
         catch (Exception)
         {
