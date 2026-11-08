@@ -124,6 +124,49 @@ public sealed class SensorWorkerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task IdentifyRacingRelease_IsNotReportedAsNoSensor()
+    {
+        // The real sensor fails an Identify that started just before focus was released (0x80098036).
+        sensor.OnIdentify = n =>
+        {
+            if (n != 1) return null;
+            hello = true;
+            SpinWait.SpinUntil(() => sensor.Count("ReleaseFocus") >= 1, 5000);
+            return IdentifyResult.DeviceError;
+        };
+        Start();
+        await TickUntil(() => sensor.Count("ReleaseFocus") >= 1);
+        await Tick(1000);
+        Assert.DoesNotContain(new StatusMessage(SensorState.NoSensor), sent);
+        Assert.Equal(0, sensor.Count("Close"));
+        Assert.Equal(new StatusMessage(SensorState.ReleasedForHello), sent.Last());
+    }
+
+    [Fact]
+    public async Task ReleaseFails_IsRetriedAndNotReportedAsReleased()
+    {
+        sensor.ReleaseHr = unchecked((int)0x80004005);
+        Start();
+        await TickUntil(() => sensor.Count("AcquireFocus") >= 1);
+        hello = true;
+        await TickUntil(() => sensor.Count("ReleaseFocus") >= 2);
+        Assert.DoesNotContain(new StatusMessage(SensorState.ReleasedForHello), sent);
+        sensor.ReleaseHr = 0;
+        await TickUntil(() => Got(new StatusMessage(SensorState.ReleasedForHello)));
+    }
+
+    [Fact]
+    public async Task SensorUnplugged_ReportsNoSensorThenOkWhenBack()
+    {
+        Start();
+        await TickUntil(() => Got(new StatusMessage(SensorState.Ok)));
+        sensor.Present = false;
+        await TickUntil(() => sent.Last() == new StatusMessage(SensorState.NoSensor));
+        sensor.Present = true;
+        await TickUntil(() => sent.Last() == new StatusMessage(SensorState.Ok));
+    }
+
+    [Fact]
     public async Task DeviceError_ExplicitlyReleasesHeldFocus()
     {
         // Focus is per process, not per session: closing the session must not leave focus held.

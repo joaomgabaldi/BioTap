@@ -14,6 +14,7 @@ public sealed class SensorWorker : BackgroundService
     static readonly TimeSpan SensorRetry = TimeSpan.FromSeconds(2);
     static readonly TimeSpan FocusRetry = TimeSpan.FromSeconds(5);
     static readonly TimeSpan IdleWait = TimeSpan.FromMilliseconds(100);
+    const int PresenceEveryTicks = 8; // 2 s
 
     readonly IBiometricSensor sensor;
     readonly Func<bool> helloActive;
@@ -26,6 +27,7 @@ public sealed class SensorWorker : BackgroundService
     SensorState? status;
     volatile bool sessionOpen;
     volatile bool focusHeld;
+    bool present = true; // focus loop only
     Task? sensorLoop;
 
     public SensorWorker(IBiometricSensor sensor, Func<bool> helloActive, Action<Message> broadcast, ServiceConfig config, TimeProvider time, ILogger<SensorWorker> log)
@@ -77,6 +79,8 @@ public sealed class SensorWorker : BackgroundService
                         break;
                     case IdentifyResult.Canceled:
                         break; // focus released or stopping; the checks above decide what next
+                    case IdentifyResult.DeviceError when !focusHeld:
+                        break; // an Identify that raced the focus release fails; that is not a sensor fault
                     case IdentifyResult.DeviceError:
                         // Session is likely stale (sleep/resume, USB unplug): drop it and start over
                         sessionOpen = false;
@@ -98,6 +102,7 @@ public sealed class SensorWorker : BackgroundService
     async Task FocusLoopAsync(CancellationToken ct)
     {
         var retryAcquireAt = long.MinValue;
+        var tick = 0;
         using var timer = new PeriodicTimer(FocusTick, time);
         try
         {
@@ -105,6 +110,7 @@ public sealed class SensorWorker : BackgroundService
             {
                 try
                 {
+                    if (tick++ % PresenceEveryTicks == 0) CheckPresence();
                     if (!sessionOpen)
                     {
                         // WinBioAcquireFocus is denied before the session is open. Focus is per process, not per
@@ -126,7 +132,7 @@ public sealed class SensorWorker : BackgroundService
                             if (hr == 0)
                             {
                                 focusHeld = true;
-                                SetStatus(SensorState.Ok);
+                                SetStatus(present ? SensorState.Ok : SensorState.NoSensor);
                             }
                             else
                             {
@@ -152,6 +158,23 @@ public sealed class SensorWorker : BackgroundService
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
+
+    /// <summary>An unplugged sensor leaves Identify blocked without an error, so presence is polled.</summary>
+    void CheckPresence()
+    {
+        bool now;
+        try { now = sensor.IsPresent(); }
+        catch (Exception e)
+        {
+            log.LogWarning("Sensor presence check failed ({Error})", e.GetType().Name);
+            return;
+        }
+        if (now == present) return;
+        present = now;
+        if (!now) SetStatus(SensorState.NoSensor);
+        else if (focusHeld) SetStatus(SensorState.Ok);
+        else if (sessionOpen && !policy.HoldingFocus) SetStatus(SensorState.ReleasedForHello);
     }
 
     bool IsHelloActive()

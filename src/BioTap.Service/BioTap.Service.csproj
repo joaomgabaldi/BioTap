@@ -3,6 +3,8 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>BioTap.Service</RootNamespace>
+    <!-- SetupAPI structs differ per architecture; the service is installed on x64 only -->
+    <CsWin32PlatformTarget>x64</CsWin32PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>

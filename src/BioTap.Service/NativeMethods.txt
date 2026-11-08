@@ -5,3 +5,6 @@ WinBioReleaseFocus
 WinBioCancel
 WinBioCloseSession
 WINBIO_IDENTITY
+SetupDiGetClassDevs
+SetupDiEnumDeviceInfo
+SP_DEVINFO_DATA
