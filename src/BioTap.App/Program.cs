@@ -1,31 +1,29 @@
+using BioTap.Core;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using Microsoft.Windows.AppLifecycle;
 
 namespace BioTap.App;
 
 public static class Program
 {
+    public static readonly string DataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "BioTap");
+    public static readonly FileLog Log = new(Path.Combine(DataFolder, "logs"), "app");
+
     [STAThread]
     static int Main()
     {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Write("FATAL", $"Unhandled {e.ExceptionObject.GetType().Name}");
+
+        using var instance = SingleInstance.TryStart(DataFolder, Log);
+        if (instance is null) return 0; // another BioTap is running; it was asked to show the panel
+
         WinRT.ComWrappersSupport.InitializeComWrappers();
-
-        var instance = AppInstance.FindOrRegisterForKey("BioTap");
-        if (!instance.IsCurrent)
-        {
-            // Second launch: only ask the running instance to show the panel. Its arguments are ignored (spec §7).
-            var args = AppInstance.GetCurrent().GetActivatedEventArgs();
-            Task.Run(() => instance.RedirectActivationToAsync(args).AsTask()).Wait();
-            return 0;
-        }
-
         Application.Start(_ =>
         {
             var queue = DispatcherQueue.GetForCurrentThread();
             SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(queue));
             var app = new App();
-            instance.Activated += (_, _) => queue.TryEnqueue(app.RequestShowPanel);
+            instance.Listen(() => queue.TryEnqueue(app.RequestShowPanel));
         });
         return 0;
     }
