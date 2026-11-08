@@ -1,0 +1,87 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
+
+namespace BioTap.Core.Tests;
+
+public class AclGuardTests
+{
+    static readonly SecurityIdentifier SystemSid = new("S-1-5-18");
+    static readonly SecurityIdentifier Admins = new("S-1-5-32-544");
+    static readonly SecurityIdentifier Users = new("S-1-5-32-545");
+    static readonly SecurityIdentifier AuthUsers = new("S-1-5-11");
+
+    static FileSecurity Secured(SecurityIdentifier? owner = null)
+    {
+        var s = new FileSecurity();
+        s.SetAccessRuleProtection(true, false);
+        s.SetOwner(owner ?? Admins);
+        s.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, AccessControlType.Allow));
+        s.AddAccessRule(new FileSystemAccessRule(Admins, FileSystemRights.FullControl, AccessControlType.Allow));
+        return s;
+    }
+
+    [Fact]
+    public void OnlySystemAndAdmins_IsSecure() => Assert.True(AclGuard.IsWritableOnlyByAdmins(Secured()));
+
+    [Fact]
+    public void UsersWrite_IsInsecure()
+    {
+        var s = Secured();
+        s.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.Write, AccessControlType.Allow));
+        Assert.False(AclGuard.IsWritableOnlyByAdmins(s));
+    }
+
+    [Fact]
+    public void AuthenticatedUsersModify_IsInsecure()
+    {
+        var s = Secured();
+        s.AddAccessRule(new FileSystemAccessRule(AuthUsers, FileSystemRights.Modify, AccessControlType.Allow));
+        Assert.False(AclGuard.IsWritableOnlyByAdmins(s));
+    }
+
+    [Theory]
+    [InlineData(FileSystemRights.AppendData)]
+    [InlineData(FileSystemRights.Delete)]
+    [InlineData(FileSystemRights.ChangePermissions)]
+    [InlineData(FileSystemRights.TakeOwnership)]
+    [InlineData(FileSystemRights.WriteAttributes)]
+    [InlineData(FileSystemRights.WriteExtendedAttributes)]
+    public void UsersAnySingleWriteRight_IsInsecure(FileSystemRights right)
+    {
+        var s = Secured();
+        s.AddAccessRule(new FileSystemAccessRule(Users, right, AccessControlType.Allow));
+        Assert.False(AclGuard.IsWritableOnlyByAdmins(s));
+    }
+
+    [Fact]
+    public void UsersReadOnly_IsSecure()
+    {
+        var s = Secured();
+        s.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.ReadAndExecute, AccessControlType.Allow));
+        Assert.True(AclGuard.IsWritableOnlyByAdmins(s));
+    }
+
+    [Fact]
+    public void OwnerNotAdmin_IsInsecure()
+        => Assert.False(AclGuard.IsWritableOnlyByAdmins(Secured(WindowsIdentity.GetCurrent().User!)));
+
+    [Fact]
+    public void DenyRuleForUsers_StillSecure()
+    {
+        var s = Secured();
+        s.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.Write, AccessControlType.Deny));
+        Assert.True(AclGuard.IsWritableOnlyByAdmins(s));
+    }
+
+    [Fact]
+    public void Path_MissingFile_IsInsecure()
+        => Assert.False(AclGuard.IsWritableOnlyByAdmins(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json")));
+
+    [Fact]
+    public void Path_UserTempFile_IsInsecure()
+    {
+        var p = Path.GetTempFileName();
+        try { Assert.False(AclGuard.IsWritableOnlyByAdmins(p)); }
+        finally { File.Delete(p); }
+    }
+}
