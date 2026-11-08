@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/BioTap.Core/BioTap.Core.csproj" />
+    <Project Path="src/BioTap.Probe/BioTap.Probe.csproj" />
     <Project Path="src/BioTap.Service/BioTap.Service.csproj" />
   </Folder>
   <Folder Name="/tests/">
