@@ -14,4 +14,6 @@ public interface IBiometricSensor : IDisposable
     IdentifyResult Identify();
     /// <summary>Unblocks a pending <see cref="Identify"/> (it returns <see cref="IdentifyResult.Canceled"/>).</summary>
     void Cancel();
+    /// <summary>Closes the session (after errors, so <see cref="Open"/> can start a fresh one).</summary>
+    void Close();
 }

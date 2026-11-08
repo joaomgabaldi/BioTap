@@ -11,6 +11,7 @@ sealed class FakeSensor : IBiometricSensor
     public int AcquireHr { get; set; }
     public bool OpenSucceeds { get; set; } = true;
     public IdentifyResult? AlwaysReturn { get; set; }
+    public int ErrorsRemaining;
     public int IgnoreCancels { get; set; }
     public volatile bool BlockedInIdentify;
 
@@ -27,6 +28,7 @@ sealed class FakeSensor : IBiometricSensor
     {
         calls.Enqueue("Identify");
         if (AlwaysReturn is { } r) return r;
+        if (Interlocked.Decrement(ref ErrorsRemaining) >= 0) return IdentifyResult.DeviceError;
         BlockedInIdentify = true;
         var result = results.Take();
         BlockedInIdentify = false;
@@ -40,5 +42,6 @@ sealed class FakeSensor : IBiometricSensor
         results.Add(IdentifyResult.Canceled);
     }
 
+    public void Close() => calls.Enqueue("Close");
     public void Dispose() => calls.Enqueue("Dispose");
 }

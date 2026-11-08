@@ -3,8 +3,9 @@ using BioTap.Core;
 namespace BioTap.Service;
 
 /// <summary>
-/// Two loops: the sensor loop (blocking Identify → TapCounter) and the focus loop (every 250 ms: FocusPolicy decides
-/// whether to hold the sensor or leave it to Windows Hello). Broadcasts taps and sensor status.
+/// Two loops: the sensor loop (blocking Identify → TapCounter, only while focus is held) and the focus loop
+/// (every 250 ms: FocusPolicy decides whether to hold the sensor or leave it to Windows Hello).
+/// Broadcasts taps and sensor status. Neither loop may die: Hello depends on the focus loop releasing the sensor.
 /// </summary>
 public sealed class SensorWorker : BackgroundService
 {
@@ -12,6 +13,7 @@ public sealed class SensorWorker : BackgroundService
     static readonly TimeSpan ReacquireDelay = TimeSpan.FromSeconds(1);
     static readonly TimeSpan SensorRetry = TimeSpan.FromSeconds(2);
     static readonly TimeSpan FocusRetry = TimeSpan.FromSeconds(5);
+    static readonly TimeSpan IdleWait = TimeSpan.FromMilliseconds(100);
 
     readonly IBiometricSensor sensor;
     readonly Func<bool> helloActive;
@@ -23,6 +25,7 @@ public sealed class SensorWorker : BackgroundService
     readonly Lock statusGate = new();
     SensorState? status;
     volatile bool sessionOpen;
+    volatile bool focusHeld;
     Task? sensorLoop;
 
     public SensorWorker(IBiometricSensor sensor, Func<bool> helloActive, Action<Message> broadcast, ServiceConfig config, TimeProvider time, ILogger<SensorWorker> log)
@@ -33,7 +36,7 @@ public sealed class SensorWorker : BackgroundService
         this.time = time;
         this.log = log;
         counter = new TapCounter(config.TapTimeoutMs, time);
-        counter.SequenceCompleted += n => broadcast(new TapsMessage(n));
+        counter.SequenceCompleted += n => Send(new TapsMessage(n));
         policy = new FocusPolicy(time, ReacquireDelay);
     }
 
@@ -47,30 +50,49 @@ public sealed class SensorWorker : BackgroundService
 
     async Task SensorLoopAsync(CancellationToken ct)
     {
-        try
+        while (!ct.IsCancellationRequested)
         {
-            while (!ct.IsCancellationRequested && !sensor.Open())
+            try
             {
-                SetStatus(SensorState.NoSensor);
-                await Task.Delay(SensorRetry, time, ct);
-            }
-            sessionOpen = true;
-            while (!ct.IsCancellationRequested)
-            {
-                switch (sensor.Identify())
+                if (!sessionOpen)
+                {
+                    if (sensor.Open()) sessionOpen = true;
+                    else
+                    {
+                        SetStatus(SensorState.NoSensor);
+                        await Task.Delay(SensorRetry, time, ct);
+                    }
+                    continue;
+                }
+                if (!focusHeld)
+                {
+                    await Task.Delay(IdleWait, time, ct); // without focus, touches belong to someone else
+                    continue;
+                }
+                // Identify blocks: always run it on a pool thread, never inline on whatever thread completed the last timer
+                switch (await Task.Run(sensor.Identify, CancellationToken.None))
                 {
                     case IdentifyResult.Touch:
                         counter.Tap();
                         break;
+                    case IdentifyResult.Canceled:
+                        break; // focus released or stopping; the checks above decide what next
                     case IdentifyResult.DeviceError:
+                        // Session is likely stale (sleep/resume, USB unplug): drop it and start over
+                        sessionOpen = false;
+                        sensor.Close();
                         SetStatus(SensorState.NoSensor);
                         await Task.Delay(SensorRetry, time, ct);
-                        if (policy.HoldingFocus) SetStatus(SensorState.Ok);
                         break;
                 }
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+            catch (Exception e)
+            {
+                log.LogError("Sensor loop error: {Error}", e.GetType().Name);
+                try { await Task.Delay(SensorRetry, time, ct); } catch (OperationCanceledException) { }
+            }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
     async Task FocusLoopAsync(CancellationToken ct)
@@ -81,34 +103,63 @@ public sealed class SensorWorker : BackgroundService
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                if (!sessionOpen) continue; // WinBioAcquireFocus is denied before the session is open
-                var hello = helloActive();
-                if (!hello && !policy.HoldingFocus && time.GetTimestamp() < retryAcquireAt) continue;
-                switch (policy.Decide(hello))
+                try
                 {
-                    case FocusAction.Acquire:
-                        var hr = sensor.AcquireFocus();
-                        if (hr == 0)
-                        {
-                            SetStatus(SensorState.Ok);
-                        }
-                        else
-                        {
-                            policy.Failed(FocusAction.Acquire);
-                            retryAcquireAt = time.GetTimestamp() + (long)(FocusRetry.TotalSeconds * time.TimestampFrequency);
-                            log.LogWarning("WinBioAcquireFocus hr=0x{Hr:X8}", hr);
-                            SetStatus(SensorState.NoFocus);
-                        }
-                        break;
-                    case FocusAction.Release:
-                        sensor.Cancel();
-                        if (sensor.ReleaseFocus() == 0) SetStatus(SensorState.ReleasedForHello);
-                        else policy.Failed(FocusAction.Release);
-                        break;
+                    if (!sessionOpen)
+                    {
+                        // WinBioAcquireFocus is denied before the session is open; a lost session also loses focus
+                        if (policy.HoldingFocus) policy.Failed(FocusAction.Acquire);
+                        focusHeld = false;
+                        continue;
+                    }
+                    var hello = IsHelloActive();
+                    if (!hello && !policy.HoldingFocus && time.GetTimestamp() < retryAcquireAt) continue;
+                    switch (policy.Decide(hello))
+                    {
+                        case FocusAction.Acquire:
+                            var hr = sensor.AcquireFocus();
+                            if (hr == 0)
+                            {
+                                focusHeld = true;
+                                SetStatus(SensorState.Ok);
+                            }
+                            else
+                            {
+                                policy.Failed(FocusAction.Acquire);
+                                retryAcquireAt = time.GetTimestamp() + (long)(FocusRetry.TotalSeconds * time.TimestampFrequency);
+                                log.LogWarning("WinBioAcquireFocus hr=0x{Hr:X8}", hr);
+                                SetStatus(SensorState.NoFocus);
+                            }
+                            break;
+                        case FocusAction.Release:
+                            focusHeld = false; // stop the sensor loop from re-entering Identify
+                            sensor.Cancel();
+                            if (sensor.ReleaseFocus() == 0) SetStatus(SensorState.ReleasedForHello);
+                            else policy.Failed(FocusAction.Release);
+                            sensor.Cancel(); // in case an Identify slipped in between
+                            break;
+                    }
+                }
+                catch (Exception e)
+                {
+                    log.LogError("Focus loop error: {Error}", e.GetType().Name);
                 }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
+
+    bool IsHelloActive()
+    {
+        try
+        {
+            return helloActive();
+        }
+        catch (Exception e)
+        {
+            log.LogWarning("Hello detection failed ({Error}); releasing the sensor to be safe", e.GetType().Name);
+            return true;
+        }
     }
 
     void SetStatus(SensorState s)
@@ -118,7 +169,19 @@ public sealed class SensorWorker : BackgroundService
             if (status == s) return;
             status = s;
         }
-        broadcast(new StatusMessage(s));
+        Send(new StatusMessage(s));
+    }
+
+    void Send(Message m)
+    {
+        try
+        {
+            broadcast(m);
+        }
+        catch (Exception e)
+        {
+            log.LogError("Broadcast failed: {Error}", e.GetType().Name);
+        }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
@@ -131,7 +194,7 @@ public sealed class SensorWorker : BackgroundService
             await Task.WhenAny(sensorLoop, Task.Delay(100, CancellationToken.None));
         }
         await stopping;
-        if (policy.HoldingFocus) sensor.ReleaseFocus();
+        if (focusHeld) sensor.ReleaseFocus();
     }
 
     public override void Dispose()

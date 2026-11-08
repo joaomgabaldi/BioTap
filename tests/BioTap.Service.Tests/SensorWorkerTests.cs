@@ -44,7 +44,7 @@ public sealed class SensorWorkerTests : IAsyncDisposable
     async Task TickUntil(Func<bool> condition)
     {
         for (var i = 0; i < 100 && !condition(); i++) await Tick(250);
-        Assert.True(condition());
+        Assert.True(condition(), "condition not met; sensor calls: " + string.Join(",", sensor.Calls));
     }
 
     bool Got(Message m) => sent.Contains(m);
@@ -53,7 +53,9 @@ public sealed class SensorWorkerTests : IAsyncDisposable
     {
         if (worker is not null)
         {
-            await worker.StopAsync(CancellationToken.None);
+            var stop = worker.StopAsync(CancellationToken.None);
+            if (await Task.WhenAny(stop, Task.Delay(5000)) != stop)
+                throw new TimeoutException("StopAsync hung; sensor calls: " + string.Join(",", sensor.Calls.TakeLast(12)));
             worker.Dispose();
         }
     }
@@ -74,7 +76,7 @@ public sealed class SensorWorkerTests : IAsyncDisposable
     {
         Start();
         await TickUntil(() => sensor.Count("AcquireFocus") >= 1);
-        await WaitUntil(() => sensor.BlockedInIdentify);
+        await TickUntil(() => sensor.BlockedInIdentify);
         sensor.Push(IdentifyResult.Touch);
         sensor.Push(IdentifyResult.Touch);
         await WaitUntil(() => sensor.Count("Identify") >= 3);
@@ -87,12 +89,12 @@ public sealed class SensorWorkerTests : IAsyncDisposable
     {
         Start();
         await TickUntil(() => sensor.Count("AcquireFocus") >= 1);
-        await WaitUntil(() => sensor.BlockedInIdentify);
+        await TickUntil(() => sensor.BlockedInIdentify);
         hello = true;
         await Tick(250);
         await WaitUntil(() => sensor.Count("ReleaseFocus") == 1);
         var calls = sensor.Calls.ToList();
-        Assert.True(calls.LastIndexOf("Cancel") < calls.IndexOf("ReleaseFocus"));
+        Assert.True(calls.IndexOf("Cancel") < calls.IndexOf("ReleaseFocus")); // cancel first; a second cancel after release is expected
         await WaitUntil(() => Got(new StatusMessage(SensorState.ReleasedForHello)));
     }
 
@@ -119,6 +121,67 @@ public sealed class SensorWorkerTests : IAsyncDisposable
         await Tick(10_000);
         Assert.InRange(sensor.Count("Identify"), 1, 6);
         Assert.True(Got(new StatusMessage(SensorState.NoSensor)));
+    }
+
+    [Fact]
+    public async Task DeviceError_ReopensSessionAndReacquiresFocus()
+    {
+        sensor.ErrorsRemaining = 1; // e.g. resume from sleep invalidated the session
+        Start();
+        await TickUntil(() => sensor.Count("AcquireFocus") >= 1);
+        await TickUntil(() => sensor.Count("AcquireFocus") >= 2);
+        var calls = sensor.Calls.ToList();
+        Assert.True(calls.IndexOf("Close") > calls.IndexOf("AcquireFocus"));
+        Assert.Equal(2, sensor.Count("Open"));
+        Assert.True(calls.LastIndexOf("Open") < calls.LastIndexOf("AcquireFocus"));
+        await WaitUntil(() => sent.LastOrDefault() == new StatusMessage(SensorState.Ok));
+    }
+
+    [Fact]
+    public async Task WhileReleasedForHello_IdentifyIsNotCalled()
+    {
+        Start();
+        await TickUntil(() => sensor.Count("AcquireFocus") >= 1);
+        await TickUntil(() => sensor.BlockedInIdentify);
+        hello = true;
+        await TickUntil(() => sensor.Count("ReleaseFocus") >= 1);
+        await Task.Delay(100);
+        var identifyCalls = sensor.Count("Identify");
+        await Tick(3000);
+        Assert.Equal(identifyCalls, sensor.Count("Identify"));
+        Assert.Equal(new StatusMessage(SensorState.ReleasedForHello), sent.Last());
+    }
+
+    [Fact]
+    public async Task HelloWatcherThrows_TreatedAsHelloActive()
+    {
+        var throwing = false;
+        worker = new SensorWorker(sensor, () => throwing ? throw new InvalidOperationException("boom") : false,
+            sent.Enqueue, new ServiceConfig(800), time, NullLogger<SensorWorker>.Instance);
+        await worker.StartAsync(CancellationToken.None);
+        await TickUntil(() => sensor.Count("AcquireFocus") >= 1);
+        throwing = true;
+        await TickUntil(() => sensor.Count("ReleaseFocus") >= 1);
+    }
+
+    [Fact]
+    public async Task BroadcastThrows_WorkerKeepsCounting()
+    {
+        var delivered = new ConcurrentQueue<Message>();
+        var fail = true;
+        worker = new SensorWorker(sensor, () => false, m => { if (fail) throw new IOException("pipe gone"); delivered.Enqueue(m); },
+            new ServiceConfig(800), time, NullLogger<SensorWorker>.Instance);
+        await worker.StartAsync(CancellationToken.None);
+        await TickUntil(() => sensor.Count("AcquireFocus") >= 1);
+        await TickUntil(() => sensor.BlockedInIdentify);
+        sensor.Push(IdentifyResult.Touch);
+        await WaitUntil(() => sensor.Count("Identify") >= 2);
+        await Tick(800); // this Taps(1) broadcast throws
+        fail = false;
+        sensor.Push(IdentifyResult.Touch);
+        await WaitUntil(() => sensor.Count("Identify") >= 3);
+        await Tick(800);
+        await WaitUntil(() => delivered.Contains(new TapsMessage(1)));
     }
 
     [Fact]
@@ -151,7 +214,7 @@ public sealed class SensorWorkerTests : IAsyncDisposable
         var w = Start();
         w.ApplyTimeout(new SetTimeoutMessage(1500));
         await TickUntil(() => sensor.Count("AcquireFocus") >= 1);
-        await WaitUntil(() => sensor.BlockedInIdentify);
+        await TickUntil(() => sensor.BlockedInIdentify);
         sensor.Push(IdentifyResult.Touch);
         await WaitUntil(() => sensor.Count("Identify") >= 2);
         await Tick(1000);
@@ -165,7 +228,7 @@ public sealed class SensorWorkerTests : IAsyncDisposable
     {
         var w = Start();
         await TickUntil(() => sensor.Count("AcquireFocus") >= 1);
-        await WaitUntil(() => sensor.BlockedInIdentify);
+        await TickUntil(() => sensor.BlockedInIdentify);
         sensor.IgnoreCancels = 2; // the first cancels arrive "too early" and are lost
         var stop = w.StopAsync(CancellationToken.None);
         await stop.WaitAsync(TimeSpan.FromSeconds(5));

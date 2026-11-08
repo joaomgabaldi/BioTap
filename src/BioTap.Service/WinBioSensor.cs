@@ -10,22 +10,26 @@ public sealed class WinBioSensor(ILogger<WinBioSensor> log) : IBiometricSensor
     const int BadCapture = unchecked((int)0x80098008); // WINBIO_E_BAD_CAPTURE: poor placement
     const int Canceled = unchecked((int)0x80098004);   // WINBIO_E_CANCELED
 
-    volatile uint session;
-    volatile bool open;
+    readonly Lock gate = new();
+    uint session;
+    bool open;
 
     public bool Open()
     {
-        if (open) return true;
-        // DatabaseId null = default database of the system pool
-        var hr = PInvoke.WinBioOpenSession(FingerprintFactor, WINBIO_POOL.WINBIO_POOL_SYSTEM, 0, default, null, out var s);
-        if (hr.Failed)
+        lock (gate)
         {
-            log.LogWarning("WinBioOpenSession hr=0x{Hr:X8}", hr.Value);
-            return false;
+            if (open) return true;
+            // DatabaseId null = default database of the system pool
+            var hr = PInvoke.WinBioOpenSession(FingerprintFactor, WINBIO_POOL.WINBIO_POOL_SYSTEM, 0, default, null, out var s);
+            if (hr.Failed)
+            {
+                log.LogWarning("WinBioOpenSession hr=0x{Hr:X8}", hr.Value);
+                return false;
+            }
+            session = s;
+            open = true;
+            return true;
         }
-        session = s;
-        open = true;
-        return true;
     }
 
     public int AcquireFocus() => PInvoke.WinBioAcquireFocus().Value;
@@ -33,8 +37,14 @@ public sealed class WinBioSensor(ILogger<WinBioSensor> log) : IBiometricSensor
 
     public IdentifyResult Identify()
     {
+        uint s;
+        lock (gate)
+        {
+            if (!open) return IdentifyResult.DeviceError;
+            s = session;
+        }
         Span<byte> subFactor = stackalloc byte[1];
-        var hr = PInvoke.WinBioIdentify(session, out _, out _, subFactor, out _).Value;
+        var hr = PInvoke.WinBioIdentify(s, out _, out _, subFactor, out _).Value; // blocking: outside the lock
         switch (hr)
         {
             case 0 or UnknownId or BadCapture: return IdentifyResult.Touch;
@@ -47,13 +57,19 @@ public sealed class WinBioSensor(ILogger<WinBioSensor> log) : IBiometricSensor
 
     public void Cancel()
     {
-        if (open) PInvoke.WinBioCancel(session);
+        lock (gate)
+            if (open) PInvoke.WinBioCancel(session);
     }
 
-    public void Dispose()
+    public void Close()
     {
-        if (!open) return;
-        open = false;
-        PInvoke.WinBioCloseSession(session);
+        lock (gate)
+        {
+            if (!open) return;
+            open = false;
+            PInvoke.WinBioCloseSession(session);
+        }
     }
+
+    public void Dispose() => Close();
 }
