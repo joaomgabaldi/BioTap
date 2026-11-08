@@ -334,6 +334,12 @@
         "dependencies": {
           "System.Diagnostics.EventLog": "10.0.14"
         }
+      },
+      "biotap.core": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )"
+        }
       }
     }
   }

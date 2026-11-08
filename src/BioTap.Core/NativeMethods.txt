@@ -1,0 +1,9 @@
+GetNamedPipeServerProcessId
+OpenProcess
+QueryFullProcessImageName
+OpenSCManager
+OpenService
+QueryServiceStatusEx
+SERVICE_STATUS_PROCESS
+SC_MANAGER_CONNECT
+SERVICE_QUERY_STATUS
