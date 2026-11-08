@@ -81,22 +81,17 @@ public sealed class PipeServerTests : IAsyncDisposable
         await using var live = await ConnectRaw();
         await WaitUntil(() => s.ClientCount == 2);
 
-        var received = 0;
-        var reading = Task.Run(async () =>
+        // Lockstep: the live client reads every message before the next one is sent, so only the dead one can fall behind.
+        var reader = new LineReader(live);
+        for (var i = 0; s.ClientCount == 2; i++)
         {
-            var r = new LineReader(live);
-            while ((await r.ReadLineAsync(cts.Token)).Status == LineStatus.Line) Interlocked.Increment(ref received);
-        });
-
-        for (var i = 0; i < 2000; i++)
-        {
+            Assert.True(i < 100_000, "dead client was never dropped");
             s.Broadcast(new TapsMessage(1));
-            if (i % 16 == 0) await Task.Delay(1, cts.Token);
+            Assert.Equal(LineStatus.Line, (await reader.ReadLineAsync(cts.Token)).Status);
         }
-        await WaitUntil(() => s.ClientCount == 1);
-        var before = Volatile.Read(ref received);
+        Assert.Equal(1, s.ClientCount);
         s.Broadcast(new TapsMessage(2));
-        await WaitUntil(() => Volatile.Read(ref received) > before);
+        Assert.Equal("""{"type":"taps","n":2}""", (await reader.ReadLineAsync(cts.Token)).Line);
     }
 
     [Fact]
@@ -119,6 +114,38 @@ public sealed class PipeServerTests : IAsyncDisposable
         await using var c = await ConnectRaw();
         await c.WriteAsync(Encoding.UTF8.GetBytes("""{"type":"setTimeout","ms":1200}""" + "\n"), cts.Token);
         Assert.Equal(new SetTimeoutMessage(1200), await got.Task.WaitAsync(cts.Token));
+    }
+
+    [Fact]
+    public async Task Server_ThrowingSubscriber_DoesNotDropClient()
+    {
+        var s = Start();
+        var calls = 0;
+        s.TimeoutRequested += _ => { Interlocked.Increment(ref calls); throw new InvalidOperationException("boom"); };
+        await using var c = await ConnectRaw();
+        var line = Encoding.UTF8.GetBytes("""{"type":"setTimeout","ms":1200}""" + "\n");
+        await c.WriteAsync(line, cts.Token);
+        await WaitUntil(() => Volatile.Read(ref calls) == 1);
+        await c.WriteAsync(line, cts.Token);
+        await WaitUntil(() => Volatile.Read(ref calls) == 2);
+        Assert.Equal(1, s.ClientCount);
+    }
+
+    [Fact]
+    public async Task Server_KeepsAcceptingAfterAllClientsDropAtOnce()
+    {
+        var s = Start();
+        for (var round = 0; round < 5; round++)
+        {
+            var batch = new List<NamedPipeClientStream>();
+            for (var i = 0; i < PipeServer.MaxClients; i++) batch.Add(await ConnectRaw());
+            await WaitUntil(() => s.ClientCount == PipeServer.MaxClients);
+            foreach (var c in batch) await c.DisposeAsync();
+            await WaitUntil(() => s.ClientCount == 0);
+        }
+        await using var last = await ConnectRaw();
+        await WaitUntil(() => s.ClientCount == 1);
+        Assert.False(running!.IsCompleted);
     }
 
     [Fact]

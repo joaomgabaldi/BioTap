@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 using Windows.Win32;
 using Windows.Win32.System.Services;
@@ -23,7 +24,8 @@ public sealed class PipeClient(string pipeName, string expectedServerExe) : IAsy
 
     public async Task ConnectAsync(CancellationToken ct)
     {
-        var p = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        // Identification: a server must never be able to impersonate this admin client
+        var p = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
         try
         {
             await p.ConnectAsync(ct);

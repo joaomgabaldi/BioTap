@@ -57,10 +57,10 @@ public sealed class PipeServer : IAsyncDisposable
     /// <summary>Runs until cancelled. Throws if another process already owns the pipe name (pipe squatting).</summary>
     public async Task RunAsync(CancellationToken ct)
     {
-        NamedPipeServerStream next;
+        NamedPipeServerStream? listening;
         try
         {
-            next = NewInstance(first: true);
+            listening = NewInstance(first: true);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -71,18 +71,30 @@ public sealed class PipeServer : IAsyncDisposable
         {
             while (true)
             {
-                await next.WaitForConnectionAsync(ct);
-                var client = new Client(next);
-                clients[client] = 0;
-                _ = ServeAsync(client, ct);
-                while (clients.Count >= MaxClients) await Task.Delay(200, ct);
-                next = NewInstance(first: false);
+                try
+                {
+                    listening ??= NewInstance(first: false);
+                    await listening.WaitForConnectionAsync(ct);
+                    var client = new Client(listening);
+                    listening = null; // now owned by the client
+                    clients[client] = 0;
+                    _ = ServeAsync(client, ct);
+                    while (clients.Count >= MaxClients) await Task.Delay(200, ct);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    // e.g. "all instances busy" while a dropped client is still closing: retry instead of giving up the name
+                    log.LogWarning("Pipe accept failed ({Error}); retrying", e.GetType().Name);
+                    listening?.Dispose();
+                    listening = null;
+                    await Task.Delay(250, ct);
+                }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         finally
         {
-            next.Dispose();
+            listening?.Dispose();
             foreach (var c in clients.Keys) Drop(c);
         }
     }
@@ -111,16 +123,32 @@ public sealed class PipeServer : IAsyncDisposable
                 var (status, line) = await reader.ReadLineAsync(linked.Token);
                 if (status == LineStatus.TooLong) log.LogWarning("Pipe client sent an oversized line; disconnecting it");
                 if (status != LineStatus.Line) break;
-                if (Protocol.TryParse(line!, out var m) && m is SetTimeoutMessage t) TimeoutRequested?.Invoke(t);
+                if (Protocol.TryParse(line!, out var m) && m is SetTimeoutMessage t) RaiseTimeoutRequested(t);
                 else log.LogDebug("Ignored pipe message");
             }
         }
         catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { }
+        catch (Exception e)
+        {
+            log.LogError("Pipe client handler failed: {Error}", e.GetType().Name);
+        }
         finally
         {
             await linked.CancelAsync();
             Drop(c);
             await writer;
+        }
+    }
+
+    void RaiseTimeoutRequested(SetTimeoutMessage t)
+    {
+        try
+        {
+            TimeoutRequested?.Invoke(t);
+        }
+        catch (Exception e)
+        {
+            log.LogError("setTimeout handler failed: {Error}", e.GetType().Name);
         }
     }
 
@@ -131,8 +159,10 @@ public sealed class PipeServer : IAsyncDisposable
             await foreach (var line in c.Queue.Reader.ReadAllAsync(ct))
                 await c.Pipe.WriteAsync(line, ct);
         }
-        catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException)
+        catch (Exception e)
         {
+            if (e is not (IOException or OperationCanceledException or ObjectDisposedException))
+                log.LogError("Pipe writer failed: {Error}", e.GetType().Name);
             Drop(c);
         }
     }
