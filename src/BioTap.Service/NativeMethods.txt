@@ -1,0 +1,7 @@
+WinBioOpenSession
+WinBioIdentify
+WinBioAcquireFocus
+WinBioReleaseFocus
+WinBioCancel
+WinBioCloseSession
+WINBIO_IDENTITY
