@@ -72,6 +72,41 @@ public class FocusPolicyTests
     }
 
     [Fact]
+    public void FailedAcquire_RetriesOnNextTick()
+    {
+        var p = NewPolicy();
+        Assert.Equal(FocusAction.Acquire, p.Decide(false));
+        p.Failed(FocusAction.Acquire);
+        Assert.False(p.HoldingFocus);
+        Assert.Equal(FocusAction.Acquire, p.Decide(false));
+    }
+
+    [Fact]
+    public void FailedRelease_RetriesWhileHelloStillActive()
+    {
+        var p = NewPolicy();
+        p.Decide(false);
+        Assert.Equal(FocusAction.Release, p.Decide(true));
+        p.Failed(FocusAction.Release);
+        Assert.True(p.HoldingFocus);
+        Assert.Equal(FocusAction.Release, p.Decide(true));
+    }
+
+    [Fact]
+    public void HelloReappearingBeforeDelay_RestartsDelay()
+    {
+        var p = NewPolicy();
+        p.Decide(false);
+        p.Decide(true);
+        Advance(900);
+        p.Decide(true);
+        Advance(900);
+        Assert.Equal(FocusAction.None, p.Decide(false));
+        Advance(100);
+        Assert.Equal(FocusAction.Acquire, p.Decide(false));
+    }
+
+    [Fact]
     public void HelloProcesses_AreTheSpecList()
         => Assert.Equal(["LogonUI", "consent", "CredentialUIBroker"], FocusPolicy.HelloProcesses);
 }
