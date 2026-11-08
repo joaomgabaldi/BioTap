@@ -22,7 +22,15 @@ public interface IPreset
 
 public sealed class PresetCatalog(IEnumerable<IPreset> presets) : IPresetCatalog
 {
-    readonly Dictionary<string, IPreset> byId = presets.ToDictionary(p => p.Id);
+    readonly Dictionary<string, IPreset> byId = Index(presets);
+
+    static Dictionary<string, IPreset> Index(IEnumerable<IPreset> presets)
+    {
+        var d = new Dictionary<string, IPreset>();
+        foreach (var p in presets)
+            if (!d.TryAdd(p.Id, p)) throw new InvalidOperationException($"Preset duplicado: {p.Id}");
+        return d;
+    }
 
     public IReadOnlyCollection<IPreset> All => byId.Values;
     public IPreset? Get(string id) => byId.GetValueOrDefault(id);

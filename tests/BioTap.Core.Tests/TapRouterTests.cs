@@ -90,11 +90,11 @@ public class TapRouterTests
     [Fact]
     public async Task Route_Throws_Failed_WithShortReason()
     {
-        preset.Throws = new InvalidOperationException(new string('x', 500));
+        preset.Throws = new PresetException(new string('x', 70));
         Router(A(1)).OnTaps(1);
         await WaitUntil(() => outcomes.Any(o => o.Kind == OutcomeKind.Failed));
         var failed = outcomes.Single(o => o.Kind == OutcomeKind.Failed);
-        Assert.True(failed.Detail!.Length <= 80);
+        Assert.Equal(new string('x', 70), failed.Detail);
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public class TapRouterTests
         preset.Gate = new TaskCompletionSource();
         var sw = Stopwatch.StartNew();
         Router(A(1)).OnTaps(1);
-        Assert.True(sw.ElapsedMilliseconds < 50);
+        Assert.True(sw.ElapsedMilliseconds < 500); // generous: only proves the caller is not blocked on the 2 s+ action
         preset.Gate.SetResult();
     }
 

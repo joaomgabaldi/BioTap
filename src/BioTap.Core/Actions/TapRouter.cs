@@ -3,20 +3,33 @@ using BioTap.Core.Config;
 
 namespace BioTap.Core.Actions;
 
+/// <summary>A failure whose message is safe to show on screen (no command line, path, typed text or clipboard).</summary>
+public sealed class PresetException(string userMessage) : Exception(userMessage);
+
 /// <summary>
-/// Turns "N taps" into the configured action. Never blocks the caller: actions run on the pool. The same action is
-/// never run twice at once (a slow command plus an impatient second tap).
+/// Turns "N taps" into the configured action. Never blocks or throws to the caller: actions run on the pool,
+/// with a timeout. The same action never runs twice at once. Outcomes: Ran when it starts, then Failed if it fails.
 /// </summary>
-public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets)
+public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, TimeProvider? time = null)
 {
-    const int MaxReasonLength = 80;
+    static readonly TimeSpan ActionTimeout = TimeSpan.FromSeconds(60);
+    readonly TimeProvider clock = time ?? TimeProvider.System;
     readonly ConcurrentDictionary<Guid, byte> running = new();
 
     public event Action<ActionOutcome>? Outcome;
 
     public void OnTaps(int n)
     {
-        var action = config().Actions.FirstOrDefault(a => a.Enabled && a.Taps == n);
+        ActionConfig? action;
+        try
+        {
+            action = config().Actions.FirstOrDefault(a => a.Enabled && a.Taps == n);
+        }
+        catch (Exception)
+        {
+            Emit(new(OutcomeKind.Failed, $"{n} toques", "Erro interno", null));
+            return;
+        }
         if (action is null)
         {
             Emit(new(OutcomeKind.NothingConfigured, $"Nada configurado para {n} toques", null, null));
@@ -32,30 +45,40 @@ public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets)
             Emit(new(OutcomeKind.Blocked, action.Name, "Ainda em execução", action.Icon));
             return;
         }
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                if (preset.CheckReady(action.Params) is { } reason)
-                {
-                    Emit(new(OutcomeKind.Blocked, action.Name, reason, action.Icon));
-                    return;
-                }
-                Emit(new(OutcomeKind.Ran, action.Name, null, action.Icon)); // feedback as soon as it starts
-                await preset.RunAsync(action.Params, CancellationToken.None);
-            }
-            catch (Exception e)
-            {
-                Emit(new(OutcomeKind.Failed, action.Name, Short(e.Message), action.Icon));
-            }
-            finally
-            {
-                running.TryRemove(action.Id, out _);
-            }
-        });
+        _ = Task.Run(() => RunAsync(action, preset));
     }
 
-    static string Short(string s) => s.Length <= MaxReasonLength ? s : s[..(MaxReasonLength - 1)] + "…";
+    async Task RunAsync(ActionConfig action, IPreset preset)
+    {
+        try
+        {
+            if (preset.CheckReady(action.Params) is { } reason)
+            {
+                Emit(new(OutcomeKind.Blocked, action.Name, reason, action.Icon));
+                return;
+            }
+            Emit(new(OutcomeKind.Ran, action.Name, null, action.Icon)); // feedback as soon as it starts
+            using var cts = new CancellationTokenSource(ActionTimeout, clock);
+            await preset.RunAsync(action.Params, cts.Token).WaitAsync(ActionTimeout, clock);
+        }
+        catch (TimeoutException)
+        {
+            Emit(new(OutcomeKind.Failed, action.Name, "Tempo esgotado", action.Icon));
+        }
+        catch (PresetException e)
+        {
+            Emit(new(OutcomeKind.Failed, action.Name, e.Message, action.Icon));
+        }
+        catch (Exception)
+        {
+            // Raw exception messages can carry command lines, paths or typed text: never put them on screen
+            Emit(new(OutcomeKind.Failed, action.Name, "Erro ao executar", action.Icon));
+        }
+        finally
+        {
+            running.TryRemove(action.Id, out _);
+        }
+    }
 
     void Emit(ActionOutcome o)
     {
