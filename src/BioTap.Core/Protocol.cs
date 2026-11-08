@@ -14,6 +14,7 @@ public sealed record SetTimeoutMessage(int Ms) : Message;
 public static class Protocol
 {
     public const int MaxLineBytes = 1024;
+    public const int MaxTaps = 9999;
 
     static readonly Dictionary<SensorState, string> StateNames = new()
     {
@@ -27,7 +28,9 @@ public static class Protocol
     public static string Serialize(Message m) => m switch
     {
         TapsMessage t => $$"""{"type":"taps","n":{{t.N}}}""",
-        StatusMessage s => $$"""{"type":"status","state":"{{StateNames[s.State]}}"}""",
+        StatusMessage s => StateNames.TryGetValue(s.State, out var state)
+            ? $$"""{"type":"status","state":"{{state}}"}"""
+            : throw new ArgumentException($"Unknown sensor state {(int)s.State}", nameof(m)),
         SetTimeoutMessage t => $$"""{"type":"setTimeout","ms":{{t.Ms}}}""",
         _ => throw new ArgumentException($"Unknown message {m.GetType().Name}", nameof(m)),
     };
@@ -47,10 +50,10 @@ public static class Protocol
         {
             using var doc = JsonDocument.Parse(bytes);
             var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object || !TryGetString(root, "type", out var type)) return false;
+            if (root.ValueKind != JsonValueKind.Object || HasDuplicateKeys(root) || !TryGetString(root, "type", out var type)) return false;
             m = type switch
             {
-                "taps" when TryGetInt(root, "n", out var n) && n > 0 => new TapsMessage(n),
+                "taps" when TryGetInt(root, "n", out var n) && n is > 0 and <= MaxTaps => new TapsMessage(n),
                 "status" when TryGetString(root, "state", out var s) && TryState(s, out var st) => new StatusMessage(st),
                 "setTimeout" when TryGetInt(root, "ms", out var ms) && ms is >= TapCounter.MinTimeoutMs and <= TapCounter.MaxTimeoutMs => new SetTimeoutMessage(ms),
                 _ => null,
@@ -61,6 +64,15 @@ public static class Protocol
         {
             return false;
         }
+    }
+
+    // Duplicate keys are ambiguous (which one wins depends on the reader), so the message is rejected.
+    static bool HasDuplicateKeys(JsonElement o)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var p in o.EnumerateObject())
+            if (!seen.Add(p.Name)) return true;
+        return false;
     }
 
     static bool TryGetString(JsonElement o, string name, out string value)
