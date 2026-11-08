@@ -1,11 +1,17 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace BioTap.Core.Config;
 
 /// <param name="Kind">"glyph" (Segoe Fluent code point), "exe" or "preset".</param>
 public sealed record IconRef(string Kind, string Value);
 
-public sealed record ActionConfig(Guid Id, int Taps, string Name, bool Enabled, IconRef Icon, string Preset, JsonObject Params);
+public sealed record ActionConfig(Guid Id, int Taps, string Name, bool Enabled, IconRef Icon, string Preset, JsonObject Params)
+{
+    /// <summary>Fields this version does not know; kept so saving never drops them.</summary>
+    [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; init; }
+}
 
 public sealed record OverlayConfig(bool Enabled, int DurationMs)
 {
@@ -19,6 +25,9 @@ public sealed record AppConfig(int Version, int TapTimeoutMs, OverlayConfig Over
 {
     public const int CurrentVersion = 1;
     public static AppConfig Default { get; } = new(CurrentVersion, ServiceConfig.Default.TapTimeoutMs, OverlayConfig.Default, []);
+
+    /// <summary>Fields this version does not know; kept so saving never drops them.</summary>
+    [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; init; }
 }
 
 public interface IPresetCatalog

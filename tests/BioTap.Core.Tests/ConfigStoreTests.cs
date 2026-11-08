@@ -65,7 +65,7 @@ public sealed class ConfigStoreTests : IDisposable
     {
         var good = Action(1);
         var bad = Action(2, p: new JsonObject { ["bad"] = true });
-        ConfigStore.Save(Path_, AppConfig.Default with { Actions = [good] }, Catalog);
+        ConfigStore.Save(Path_, AppConfig.Default with { Actions = [good] }, Catalog, Secure);
         // inject an invalid action directly into the file
         var node = JsonNode.Parse(File.ReadAllText(Path_))!;
         node["actions"]!.AsArray().Add(JsonNode.Parse(ConfigStore.Serialize(AppConfig.Default with { Actions = [bad] }))!["actions"]![0]!.DeepClone());
@@ -82,7 +82,7 @@ public sealed class ConfigStoreTests : IDisposable
     public void Save_RoundTrip()
     {
         var cfg = new AppConfig(1, 1200, new OverlayConfig(false, 3000), [Action(1), Action(3, "runCommand", new JsonObject { ["shell"] = "cmd", ["command"] = "dir" })]);
-        ConfigStore.Save(Path_, cfg, Catalog);
+        ConfigStore.Save(Path_, cfg, Catalog, Secure);
         var r = ConfigStore.Load(Path_, Secure, Catalog);
         Assert.Equal(1200, r.Config.TapTimeoutMs);
         Assert.Equal(cfg.Overlay, r.Config.Overlay);
@@ -93,17 +93,17 @@ public sealed class ConfigStoreTests : IDisposable
     [Fact]
     public void Save_IsAtomic_NoTmpLeftBehind()
     {
-        ConfigStore.Save(Path_, AppConfig.Default, Catalog);
-        ConfigStore.Save(Path_, AppConfig.Default with { TapTimeoutMs = 900 }, Catalog);
+        ConfigStore.Save(Path_, AppConfig.Default, Catalog, Secure);
+        ConfigStore.Save(Path_, AppConfig.Default with { TapTimeoutMs = 900 }, Catalog, Secure);
         Assert.Equal(["config.json"], Directory.GetFiles(dir).Select(Path.GetFileName));
     }
 
     [Fact]
     public void Save_Invalid_ThrowsAndKeepsOldFile()
     {
-        ConfigStore.Save(Path_, AppConfig.Default, Catalog);
+        ConfigStore.Save(Path_, AppConfig.Default, Catalog, Secure);
         var before = File.ReadAllText(Path_);
-        Assert.Throws<InvalidOperationException>(() => ConfigStore.Save(Path_, AppConfig.Default with { Actions = [Action(1), Action(1)] }, Catalog));
+        Assert.Throws<InvalidOperationException>(() => ConfigStore.Save(Path_, AppConfig.Default with { Actions = [Action(1), Action(1)] }, Catalog, Secure));
         Assert.Equal(before, File.ReadAllText(Path_));
     }
 
