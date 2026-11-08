@@ -2,3 +2,6 @@ SetWindowLong
 GetWindowLong
 GetCursorPos
 WINDOW_EX_STYLE
+ChangeWindowMessageFilter
+RegisterWindowMessage
+GetDpiForWindow
