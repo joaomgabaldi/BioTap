@@ -22,6 +22,7 @@ public sealed class PipeServer : IAsyncDisposable
     readonly ILogger log;
     readonly PipeSecurity? security;
     readonly ConcurrentDictionary<Client, byte> clients = new();
+    readonly ConcurrentDictionary<Task, byte> handlers = new();
 
     public PipeServer(string pipeName, ILogger<PipeServer> log) : this(pipeName, log, CreateSecurity()) { }
 
@@ -100,15 +101,18 @@ public sealed class PipeServer : IAsyncDisposable
                     connected.Dispose();
                     throw; // fail closed: the service stops instead of leaving the name to someone else
                 }
-                if (clients.Count >= MaxClients)
+                if (clients.Count >= MaxClients && clients.Keys.MinBy(c => c.Order) is { } oldest)
                 {
-                    connected.Dispose();
-                    continue;
+                    // An idle or stale client must not lock out a new one (e.g. the app after a restart)
+                    log.LogInformation("Pipe full; disconnecting the oldest client");
+                    Drop(oldest);
                 }
                 var client = new Client(connected);
                 if (lastStatusLine is { } status) client.Queue.Writer.TryWrite(status);
                 clients[client] = 0;
-                _ = ServeAsync(client, ct);
+                var handler = ServeAsync(client, ct);
+                handlers[handler] = 0;
+                _ = handler.ContinueWith(t => handlers.TryRemove(t, out _), TaskScheduler.Default);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
@@ -125,7 +129,7 @@ public sealed class PipeServer : IAsyncDisposable
         var line = Encoding.UTF8.GetBytes(Protocol.Serialize(m) + "\n");
         if (m is StatusMessage) lastStatusLine = line;
         foreach (var c in clients.Keys)
-            if (!c.Queue.Writer.TryWrite(line))
+            if (!c.Queue.Writer.TryWrite(line) && clients.ContainsKey(c)) // a client dropped meanwhile is not "not reading"
             {
                 log.LogWarning("Pipe client not reading; disconnecting it");
                 Drop(c);
@@ -195,14 +199,18 @@ public sealed class PipeServer : IAsyncDisposable
         c.Pipe.Dispose();
     }
 
-    public ValueTask DisposeAsync()
+    internal int RunningHandlers => handlers.Keys.Count(t => !t.IsCompleted);
+
+    public async ValueTask DisposeAsync()
     {
         foreach (var c in clients.Keys) Drop(c);
-        return ValueTask.CompletedTask;
+        await Task.WhenAll(handlers.Keys);
     }
 
     sealed class Client(NamedPipeServerStream pipe)
     {
+        static long nextOrder;
+        public long Order { get; } = Interlocked.Increment(ref nextOrder);
         public NamedPipeServerStream Pipe { get; } = pipe;
         public Channel<byte[]> Queue { get; } = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(QueueLimit) { SingleReader = true });
     }
