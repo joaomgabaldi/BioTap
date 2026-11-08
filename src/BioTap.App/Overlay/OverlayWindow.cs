@@ -1,13 +1,11 @@
-using BioTap.Core;
+using BioTap.App.Shell;
 using BioTap.Core.Actions;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
-using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Windows.Graphics;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
@@ -20,18 +18,19 @@ namespace BioTap.App.Overlay;
 /// </summary>
 sealed class OverlayWindow
 {
-    const int Height = 48;
+    const int Height = 48, MaxWidth = 560, MinWidth = 160;
     readonly Window window;
+    readonly HWND hwnd;
     readonly FontIcon icon = new() { FontSize = 20 };
-    readonly TextBlock title = new() { FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
-    readonly TextBlock detail = new() { FontSize = 12, Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center };
+    readonly TextBlock title = new() { FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    readonly TextBlock detail = new() { FontSize = 12, Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     readonly DispatcherQueueTimer hideTimer;
 
     public OverlayWindow()
     {
         window = new Window
         {
-            SystemBackdrop = new DesktopAcrylicBackdrop(),
+            SystemBackdrop = new ActiveAcrylicBackdrop(),
             Content = new Border
             {
                 Padding = new Thickness(16, 0, 16, 0),
@@ -48,10 +47,12 @@ sealed class OverlayWindow
         }
         window.AppWindow.IsShownInSwitchers = false;
 
-        var hwnd = new HWND(WinRT.Interop.WindowNative.GetWindowHandle(window));
+        hwnd = new HWND(WinRT.Interop.WindowNative.GetWindowHandle(window));
         var ex = PInvoke.GetWindowLong(hwnd, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE);
+        // TRANSPARENT needs LAYERED to pass clicks through; a layered window needs its alpha set or it is never drawn
         ex |= (int)(WINDOW_EX_STYLE.WS_EX_NOACTIVATE | WINDOW_EX_STYLE.WS_EX_TRANSPARENT | WINDOW_EX_STYLE.WS_EX_TOOLWINDOW | WINDOW_EX_STYLE.WS_EX_TOPMOST | WINDOW_EX_STYLE.WS_EX_LAYERED);
         PInvoke.SetWindowLong(hwnd, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE, ex);
+        PInvoke.SetLayeredWindowAttributes(hwnd, default, 255, LAYERED_WINDOW_ATTRIBUTES_FLAGS.LWA_ALPHA);
 
         hideTimer = window.DispatcherQueue.CreateTimer();
         hideTimer.IsRepeating = false;
@@ -67,22 +68,13 @@ sealed class OverlayWindow
         detail.Text = o.Detail ?? "";
         detail.Visibility = o.Detail is null ? Visibility.Collapsed : Visibility.Visible;
 
-        // Width from the text, capped; position from the work area of the monitor under the cursor
-        var scale = window.Content.XamlRoot?.RasterizationScale ?? 1.0;
-        var width = (int)Math.Min(560, (80 + 8 * (o.Title.Length + (o.Detail?.Length ?? 0))) * scale);
-        var height = (int)(Height * scale);
-        var area = DisplayArea.GetFromPoint(Cursor(), DisplayAreaFallback.Primary);
-        var (x, y) = TaskbarGeometry.Place(
-            new ScreenRect(area.WorkArea.X, area.WorkArea.Y, area.WorkArea.Width, area.WorkArea.Height),
-            new ScreenRect(area.OuterBounds.X, area.OuterBounds.Y, area.OuterBounds.Width, area.OuterBounds.Height),
-            width, height);
-        window.AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
+        // Width estimated from the text in DIPs, capped, then scaled for the target monitor
+        var dips = Math.Clamp(80 + 8 * (o.Title.Length + (o.Detail?.Length ?? 0)), MinWidth, MaxWidth);
+        Placement.AboveTaskbar(window.AppWindow, hwnd, scale => ((int)(dips * scale), (int)(Height * scale)));
         window.AppWindow.Show(activateWindow: false);
 
         hideTimer.Stop();
         hideTimer.Interval = duration;
         hideTimer.Start();
     }
-
-    static PointInt32 Cursor() => PInvoke.GetCursorPos(out var p) ? new PointInt32(p.X, p.Y) : new PointInt32(0, 0);
 }

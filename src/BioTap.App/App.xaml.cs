@@ -10,7 +10,11 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
-        UnhandledException += (_, e) => Program.Log.Write("ERROR", $"Unhandled UI {e.Exception.GetType().Name}");
+        UnhandledException += (_, e) =>
+        {
+            Program.Log.Write("ERROR", $"Unhandled UI {e.Exception.GetType().Name}");
+            e.Handled = true; // a bug in one window must not kill the tray app
+        };
         // The app lives in the tray: closing the panel or preferences must not end the process
         DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
     }

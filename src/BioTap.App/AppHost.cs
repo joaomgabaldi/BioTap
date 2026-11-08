@@ -63,7 +63,12 @@ sealed class AppHost(DispatcherQueue ui)
 
         connection = new ServiceConnection(() => new PipeClient(PipeServerName, ServiceExe), TimeProvider.System);
         connection.Tapped += router.OnTaps;
-        connection.StateChanged += s => ui.TryEnqueue(() => { connectionState = s; UpdateTray(); });
+        connection.StateChanged += s => ui.TryEnqueue(() =>
+        {
+            connectionState = s;
+            if (s != ConnectionState.Connected) sensorState = null; // the old sensor status is unknown until the service reports again
+            UpdateTray();
+        });
         connection.SensorStateChanged += s => ui.TryEnqueue(() => { sensorState = s; UpdateTray(); });
         _ = connection.RunAsync(stop.Token);
 

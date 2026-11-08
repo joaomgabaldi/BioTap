@@ -5,3 +5,5 @@ WINDOW_EX_STYLE
 ChangeWindowMessageFilter
 RegisterWindowMessage
 GetDpiForWindow
+SetLayeredWindowAttributes
+SetForegroundWindow
