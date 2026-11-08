@@ -36,7 +36,7 @@ public static class NativeProcess
                 try
                 {
                     if (names.Contains(p.ProcessName, StringComparer.OrdinalIgnoreCase))
-                        found.Add(new ProcessInfo(p.ProcessName, p.SessionId, ImagePath((uint)p.Id)));
+                        found.Add(new ProcessInfo(p.ProcessName, p.SessionId, ImagePath((uint)p.Id), IsSuspended(p)));
                 }
                 catch (InvalidOperationException) { } // exited while we looked
             }
@@ -46,6 +46,23 @@ public static class NativeProcess
             foreach (var p in all) p.Dispose();
         }
         return found;
+    }
+
+    /// <summary>True when every thread is suspended. On any error: false (counting it as active is the safe side).</summary>
+    static bool IsSuspended(Process p)
+    {
+        try
+        {
+            var threads = p.Threads;
+            if (threads.Count == 0) return false;
+            foreach (ProcessThread t in threads)
+                if (t.ThreadState != System.Diagnostics.ThreadState.Wait || t.WaitReason != ThreadWaitReason.Suspended) return false;
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>Active console session id, or -1 when there is none (e.g. while switching users).</summary>

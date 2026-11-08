@@ -46,3 +46,19 @@ public class HelloDetectorTests
     [Fact]
     public void NoProcesses_IsNotHello() => Assert.False(Detect());
 }
+
+public class HelloDetectorSuspendedTests
+{
+    [Fact]
+    public void SuspendedHelloProcess_IsIgnored()
+        // BioEnrollmentHost stays alive, suspended, after Settings closes the enrollment page
+        => Assert.False(HelloDetector.IsHelloActive(
+            [new ProcessInfo("BioEnrollmentHost", 1, @"C:\Windows\SystemApps\Microsoft.BioEnrollment_cw5n1h2txyewy\BioEnrollmentHost.exe", Suspended: true)],
+            1, @"C:\Windows"));
+
+    [Fact]
+    public void RunningHelloProcess_StillCounts()
+        => Assert.True(HelloDetector.IsHelloActive(
+            [new ProcessInfo("BioEnrollmentHost", 1, @"C:\Windows\SystemApps\Microsoft.BioEnrollment_cw5n1h2txyewy\BioEnrollmentHost.exe", Suspended: false)],
+            1, @"C:\Windows"));
+}

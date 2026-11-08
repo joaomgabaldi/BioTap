@@ -1,7 +1,8 @@
 namespace BioTap.Core;
 
 /// <param name="ImagePath">Full exe path, or null when it could not be read.</param>
-public readonly record struct ProcessInfo(string Name, int SessionId, string? ImagePath);
+/// <param name="Suspended">All threads suspended (e.g. a UWP host Windows keeps alive after its page closed).</param>
+public readonly record struct ProcessInfo(string Name, int SessionId, string? ImagePath, bool Suspended = false);
 
 public static class HelloDetector
 {
@@ -18,6 +19,7 @@ public static class HelloDetector
         {
             if (!FocusPolicy.HelloProcesses.Contains(p.Name, StringComparer.OrdinalIgnoreCase)) continue;
             if (consoleSessionId >= 0 && p.SessionId != consoleSessionId) continue;
+            if (p.Suspended) continue; // alive but not showing anything
             if (p.ImagePath is null || p.ImagePath.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return true;
         }
         return false;

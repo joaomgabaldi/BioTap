@@ -28,6 +28,7 @@ public sealed class SensorWorker : BackgroundService
     volatile bool sessionOpen;
     volatile bool focusHeld;
     bool present = true; // focus loop only
+    bool? lastHello;     // focus loop only, for logging transitions
     Task? sensorLoop;
 
     public SensorWorker(IBiometricSensor sensor, Func<bool> helloActive, Action<Message> broadcast, ServiceConfig config, TimeProvider time, ILogger<SensorWorker> log)
@@ -58,7 +59,11 @@ public sealed class SensorWorker : BackgroundService
             {
                 if (!sessionOpen)
                 {
-                    if (sensor.Open()) sessionOpen = true;
+                    if (sensor.Open())
+                    {
+                        sessionOpen = true;
+                        log.LogInformation("Sensor session open");
+                    }
                     else
                     {
                         SetStatus(SensorState.NoSensor);
@@ -124,11 +129,17 @@ public sealed class SensorWorker : BackgroundService
                         continue;
                     }
                     var hello = IsHelloActive();
+                    if (hello != lastHello)
+                    {
+                        log.LogInformation("Windows Hello prompt {State}", hello ? "detected" : "gone");
+                        lastHello = hello;
+                    }
                     if (!hello && !policy.HoldingFocus && time.GetTimestamp() < retryAcquireAt) continue;
                     switch (policy.Decide(hello))
                     {
                         case FocusAction.Acquire:
                             var hr = sensor.AcquireFocus();
+                            log.LogInformation("Acquire focus hr=0x{Hr:X8}", hr);
                             if (hr == 0)
                             {
                                 focusHeld = true;
@@ -145,6 +156,7 @@ public sealed class SensorWorker : BackgroundService
                         case FocusAction.Release:
                             focusHeld = false; // stop the sensor loop from re-entering Identify
                             sensor.Cancel();
+                            log.LogInformation("Releasing focus for Windows Hello");
                             if (sensor.ReleaseFocus() == 0) SetStatus(SensorState.ReleasedForHello);
                             else policy.Failed(FocusAction.Release);
                             sensor.Cancel(); // in case an Identify slipped in between
@@ -171,6 +183,7 @@ public sealed class SensorWorker : BackgroundService
             return;
         }
         if (now == present) return;
+        log.LogInformation("Sensor {State}", now ? "plugged in" : "unplugged");
         present = now;
         if (!now) SetStatus(SensorState.NoSensor);
         else if (focusHeld) SetStatus(SensorState.Ok);
