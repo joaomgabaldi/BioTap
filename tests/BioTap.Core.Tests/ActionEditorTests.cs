@@ -57,9 +57,9 @@ public sealed class ActionEditorTests : IDisposable
     {
         var sent = new List<int>();
         var saver = new SettingsSaver(P, Catalog, _ => true, (ms, _) => { sent.Add(ms); return Task.CompletedTask; });
-        Assert.Null(await saver.SaveAsync(AppConfig.Default, AppConfig.Default with { TapTimeoutMs = 1200 }));
+        Assert.Equal(new SaveOutcome(true, null), await saver.SaveAsync(AppConfig.Default, AppConfig.Default with { TapTimeoutMs = 1200 }));
         Assert.Equal([1200], sent);
-        Assert.Null(await saver.SaveAsync(AppConfig.Default with { TapTimeoutMs = 1200 }, AppConfig.Default with { TapTimeoutMs = 1200, Overlay = new(false, 1500) }));
+        Assert.Equal(new SaveOutcome(true, null), await saver.SaveAsync(AppConfig.Default with { TapTimeoutMs = 1200 }, AppConfig.Default with { TapTimeoutMs = 1200, Overlay = new(false, 1500) }));
         Assert.Equal([1200], sent); // unchanged timeout: nothing sent
         Assert.Equal(1200, ConfigStore.Load(P, _ => true, Catalog).Config.TapTimeoutMs);
     }
@@ -69,8 +69,9 @@ public sealed class ActionEditorTests : IDisposable
     {
         File.WriteAllText(P, """{"version":9}""");
         var saver = new SettingsSaver(P, Catalog, _ => true, (_, _) => Task.CompletedTask);
-        var reason = await saver.SaveAsync(AppConfig.Default, AppConfig.Default with { TapTimeoutMs = 900 });
-        Assert.NotNull(reason);
+        var outcome = await saver.SaveAsync(AppConfig.Default, AppConfig.Default with { TapTimeoutMs = 900 });
+        Assert.False(outcome.Saved);
+        Assert.NotNull(outcome.Message);
         Assert.Equal("""{"version":9}""", File.ReadAllText(P));
     }
 }

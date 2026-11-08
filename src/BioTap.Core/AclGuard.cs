@@ -17,14 +17,22 @@ public static class AclGuard
         (FileSystemRights)0x40000000 | // GENERIC_WRITE
         (FileSystemRights)0x10000000;  // GENERIC_ALL
 
-    static bool IsTrusted(IdentityReference? id) => id is SecurityIdentifier s && (s == SystemSid || s == Admins);
+    // Owns Windows' own files; more privileged than an admin, so it is trusted too
+    static readonly SecurityIdentifier TrustedInstaller = new("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464");
+
+    static bool IsTrusted(IdentityReference? id)
+        => id is SecurityIdentifier s && (s == SystemSid || s == Admins || s == TrustedInstaller);
 
     public static bool IsWritableOnlyByAdmins(FileSystemSecurity sec)
     {
         if (!IsTrusted(sec.GetOwner(typeof(SecurityIdentifier)))) return false;
         foreach (FileSystemAccessRule r in sec.GetAccessRules(true, true, typeof(SecurityIdentifier)))
+        {
+            // An inherit-only ACE (e.g. CREATOR OWNER on a system folder) applies to new children, not to this object
+            if (r.PropagationFlags.HasFlag(PropagationFlags.InheritOnly)) continue;
             if (r.AccessControlType == AccessControlType.Allow && (r.FileSystemRights & WriteRights) != 0 && !IsTrusted(r.IdentityReference))
                 return false;
+        }
         return true;
     }
 

@@ -10,13 +10,20 @@ $data = Join-Path $env:ProgramData 'BioTap'
 $svc  = 'BioTap.Service'
 $exe  = Join-Path $bin 'BioTap.Service.exe'
 
+$appExe = Join-Path $bin 'App\BioTap.exe'
+$task  = 'BioTap'
+$user  = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+
 if (Get-Service $svc -ErrorAction SilentlyContinue) {
     Stop-Service $svc -Force
     (Get-Service $svc).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
 }
+Get-Process BioTap -ErrorAction SilentlyContinue | Stop-Process -Force # app files are replaced below
 
 dotnet publish (Join-Path $repo 'src\BioTap.Service') -c Release -o $bin
-if ($LASTEXITCODE -ne 0) { throw 'dotnet publish falhou.' }
+if ($LASTEXITCODE -ne 0) { throw 'dotnet publish (servico) falhou.' }
+dotnet publish (Join-Path $repo 'src\BioTap.App') -c Release -o (Join-Path $bin 'App')
+if ($LASTEXITCODE -ne 0) { throw 'dotnet publish (app) falhou.' }
 
 # ProgramData e gravavel por usuarios comuns. Uma pasta BioTap ja existente so e reaproveitada se for confiavel
 # (dona admin/SYSTEM, ninguem mais escreve); senao e renomeada para o lado e uma nova e criada. Nunca usa /T:
@@ -54,4 +61,14 @@ if (Get-Service $svc -ErrorAction SilentlyContinue) {
 }
 if ($LASTEXITCODE -ne 0) { throw 'sc.exe falhou ao registrar o servico.' }
 Start-Service $svc
+
+# The app runs elevated: a logon task with highest privileges starts it without a UAC prompt (spec §2, §6)
+$action    = New-ScheduledTaskAction -Execute $appExe
+$trigger   = New-ScheduledTaskTrigger -AtLogOn -User $user
+$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
+$settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+Register-ScheduledTask -TaskName $task -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+Start-ScheduledTask -TaskName $task # start it now in the user's session
+
 Get-Service $svc
+Get-ScheduledTask -TaskName $task | Select-Object TaskName, State

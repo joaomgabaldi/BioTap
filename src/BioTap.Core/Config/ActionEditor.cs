@@ -26,11 +26,15 @@ public static class ActionEditor
     public static AppConfig Without(AppConfig c, Guid id) => c with { Actions = [.. c.Actions.Where(a => a.Id != id)] };
 }
 
+/// <param name="Saved">The file now holds the new config.</param>
+/// <param name="Message">null when everything worked; otherwise what to tell the user.</param>
+public sealed record SaveOutcome(bool Saved, string? Message);
+
 /// <summary>Saves the config and tells the service when the tap timeout changed (spec §4: changes apply on save).</summary>
 public sealed class SettingsSaver(string path, IPresetCatalog presets, Func<string, bool> isSecure, Func<int, CancellationToken, Task> sendTimeout)
 {
-    /// <summary>null on success; otherwise why it was not saved (the file on disk is left untouched).</summary>
-    public async Task<string?> SaveAsync(AppConfig before, AppConfig after)
+    /// <summary>Never throws. When not saved, the file on disk is left untouched.</summary>
+    public async Task<SaveOutcome> SaveAsync(AppConfig before, AppConfig after)
     {
         try
         {
@@ -38,9 +42,17 @@ public sealed class SettingsSaver(string path, IPresetCatalog presets, Func<stri
         }
         catch (Exception e) when (e is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            return e is InvalidOperationException ? e.Message : "Não foi possível gravar a configuração.";
+            return new(false, e is InvalidOperationException ? e.Message : "Não foi possível gravar a configuração.");
         }
-        if (after.TapTimeoutMs != before.TapTimeoutMs) await sendTimeout(after.TapTimeoutMs, CancellationToken.None);
-        return null;
+        if (after.TapTimeoutMs == before.TapTimeoutMs) return new(true, null);
+        try
+        {
+            await sendTimeout(after.TapTimeoutMs, CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            return new(true, "Salvo, mas o serviço não recebeu o novo tempo."); // it reads the file on its next start
+        }
+        return new(true, null);
     }
 }

@@ -17,7 +17,18 @@ public sealed class StartupTask(string taskName = "BioTap")
         catch (Exception e) when (e is COMException or FileNotFoundException) { return false; }
     });
 
-    public void Enable(string exePath) => Use(folder =>
+    /// <summary>
+    /// Refuses an exe that a non-admin could replace (e.g. a build folder or Downloads): a logon task with highest
+    /// privileges for such a file would hand admin rights to whoever writes it.
+    /// </summary>
+    public void Enable(string exePath)
+    {
+        if (!AclGuard.IsWritableOnlyByAdmins(exePath))
+            throw new InvalidOperationException("O BioTap precisa estar instalado em uma pasta só de administradores (Program Files).");
+        Register(exePath);
+    }
+
+    void Register(string exePath) => Use(folder =>
     {
         object? service = null;
         try
@@ -36,6 +47,7 @@ public sealed class StartupTask(string taskName = "BioTap")
             trigger.UserId = user;
             dynamic action = def.Actions.Create(ActionExec);
             action.Path = exePath;
+            action.WorkingDirectory = Path.GetDirectoryName(exePath);
             Release(((dynamic)folder).RegisterTaskDefinition(taskName, def, CreateOrUpdate, null, null, LogonInteractiveToken));
             return true;
         }
