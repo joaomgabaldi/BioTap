@@ -28,6 +28,26 @@ public static class AclGuard
         return true;
     }
 
+    /// <summary>
+    /// For named kernel objects (mutex, event): owner is SYSTEM/Administrators and every allow ACE is for one of them.
+    /// Used to tell our own objects from ones a non-admin process created first under the same name (squatting).
+    /// </summary>
+    public static bool IsAdminOnly(string sddl)
+    {
+        try
+        {
+            var sd = new RawSecurityDescriptor(sddl);
+            if (!IsTrusted(sd.Owner) || sd.DiscretionaryAcl is null) return false;
+            foreach (var ace in sd.DiscretionaryAcl)
+                if (ace is CommonAce { AceQualifier: AceQualifier.AccessAllowed } a && !IsTrusted(a.SecurityIdentifier)) return false;
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     /// <summary>The file and the folder holding it (whoever can replace the file controls it too).</summary>
     public static bool IsSecure(FileSystemSecurity file, FileSystemSecurity folder)
         => IsWritableOnlyByAdmins(file) && IsWritableOnlyByAdmins(folder);
