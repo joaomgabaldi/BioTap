@@ -88,5 +88,37 @@ public class TapCounterTests
         c.TimeoutMs = 2000;
         Advance(800);
         Assert.Equal([1], emitted);
+
+        c.Tap();
+        Advance(1999);
+        Assert.Equal([1], emitted);
+        Advance(1);
+        Assert.Equal([1, 1], emitted);
+    }
+
+    [Fact]
+    public async Task SequenceHandlers_NeverRunConcurrently()
+    {
+        // Real timer: a slow handler must not overlap the next sequence's handler.
+        using var c = new TapCounter(TapCounter.MinTimeoutMs, TimeProvider.System);
+        int active = 0, maxActive = 0;
+        c.SequenceCompleted += _ =>
+        {
+            var now = Interlocked.Increment(ref active);
+            InterlockedMax(ref maxActive, now);
+            Thread.Sleep(600);
+            Interlocked.Decrement(ref active);
+        };
+        c.Tap();
+        await Task.Delay(400); // first handler running
+        c.Tap();
+        await Task.Delay(1500); // second sequence completes while/after the first
+        Assert.Equal(1, maxActive);
+    }
+
+    static void InterlockedMax(ref int target, int value)
+    {
+        int seen;
+        while ((seen = Volatile.Read(ref target)) < value && Interlocked.CompareExchange(ref target, value, seen) != seen) { }
     }
 }
