@@ -108,5 +108,5 @@ public class FocusPolicyTests
 
     [Fact]
     public void HelloProcesses_AreTheSpecList()
-        => Assert.Equal(["LogonUI", "consent", "CredentialUIBroker"], FocusPolicy.HelloProcesses);
+        => Assert.Equal(["LogonUI", "consent", "CredentialUIBroker", "UserOOBEBroker"], FocusPolicy.HelloProcesses);
 }
