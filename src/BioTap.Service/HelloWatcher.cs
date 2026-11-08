@@ -5,15 +5,29 @@ namespace BioTap.Service;
 
 public static class HelloWatcher
 {
-    /// <summary>True while any process that may show a Windows Hello prompt is running (spec §2).</summary>
+    static readonly string WindowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+    /// <summary>One process snapshot per call; only Hello-named processes get their image path read (spec §2).</summary>
     public static bool IsHelloActive()
     {
-        foreach (var name in FocusPolicy.HelloProcesses)
+        var all = Process.GetProcesses();
+        try
         {
-            var procs = Process.GetProcessesByName(name);
-            foreach (var p in procs) p.Dispose();
-            if (procs.Length > 0) return true;
+            var candidates = new List<ProcessInfo>();
+            foreach (var p in all)
+            {
+                try
+                {
+                    if (FocusPolicy.HelloProcesses.Contains(p.ProcessName, StringComparer.OrdinalIgnoreCase))
+                        candidates.Add(new ProcessInfo(p.ProcessName, p.SessionId, NativeProcess.ImagePath((uint)p.Id)));
+                }
+                catch (InvalidOperationException) { } // exited while we looked
+            }
+            return HelloDetector.IsHelloActive(candidates, NativeProcess.ConsoleSessionId(), WindowsDir);
         }
-        return false;
+        finally
+        {
+            foreach (var p in all) p.Dispose();
+        }
     }
 }
