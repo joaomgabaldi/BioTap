@@ -9,3 +9,14 @@ SetLayeredWindowAttributes
 SetForegroundWindow
 MessageBox
 SendInput
+GetForegroundWindow
+GetShellWindow
+GetClassName
+SetWindowPos
+EnumWindows
+IsWindowVisible
+IsIconic
+GetWindowTextLength
+ShowWindow
+LockWorkStation
+GetWindowThreadProcessId

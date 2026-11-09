@@ -9,3 +9,13 @@ sealed class FakeKeyboard : IKeyboard
     public void Tap(ushort key, int times) => Calls.Add($"Tap(0x{key:X2},{times})");
     public void Type(string text) => Calls.Add("Type:" + text);
 }
+
+sealed class FakeWindows : IWindows
+{
+    public nint ForegroundWindow;
+    public readonly List<string> Calls = [];
+    public nint Foreground() => ForegroundWindow;
+    public void ToggleTopmost(nint window) => Calls.Add($"Topmost({window})");
+    public void MinimizeAllExcept(nint window) => Calls.Add($"MinimizeExcept({window})");
+    public void Lock() => Calls.Add("Lock");
+}
