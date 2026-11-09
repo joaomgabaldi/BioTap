@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using BioTap.Core.Config;
 using Windows.Win32;
@@ -35,7 +36,10 @@ public static class ScreenshotSaver
         }
     }
 
-    public static string Save(string folder, byte[] png, DateTime now)
+    public static string Save(string folder, byte[] png, DateTime now) => Save(folder, png, now, (fs, bytes) => fs.Write(bytes));
+
+    /// <summary><paramref name="write"/> is the seam that lets tests make the write fail.</summary>
+    internal static string Save(string folder, byte[] png, DateTime now, Action<FileStream, byte[]> write)
     {
         if (CheckFolder(folder) is { } problem) throw new PresetException(problem);
         var full = Path.GetFullPath(folder);
@@ -43,26 +47,41 @@ public static class ScreenshotSaver
         for (int n = 1; n < 1000; n++)
         {
             var path = Path.Combine(full, n == 1 ? stem + ".png" : $"{stem} ({n}).png");
-            FileStream fs;
-            try { fs = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None); }
-            catch (IOException) when (File.Exists(path)) { continue; }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { throw new PresetException("Não foi possível salvar a imagem"); }
-
-            var ok = false;
-            try
+            // CreateFile with DELETE access (FileStream cannot ask for it) so a failed save removes the file through the handle
+            var handle = PInvoke.CreateFile(path, (uint)(FILE_ACCESS_RIGHTS.FILE_GENERIC_WRITE | FILE_ACCESS_RIGHTS.DELETE), FILE_SHARE_MODE.FILE_SHARE_NONE,
+                null, FILE_CREATION_DISPOSITION.CREATE_NEW, FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_NORMAL, null);
+            if (handle.IsInvalid)
             {
-                using (fs)
+                handle.Dispose();
+                if (File.Exists(path)) continue;
+                throw new PresetException("Não foi possível salvar a imagem");
+            }
+            var fs = new FileStream(handle, FileAccess.Write);
+            using (fs)
+            {
+                try
                 {
                     if (!IsInside(FinalPath(fs), full)) throw new PresetException("Pasta inválida");
-                    fs.Write(png);
+                    write(fs, png);
+                    fs.Flush();
+                    return path;
                 }
-                ok = true;
-                return path;
+                catch (Exception e) when (e is PresetException or IOException or UnauthorizedAccessException)
+                {
+                    // Nothing is deleted by name (the folder may have been swapped): the open handle marks it for deletion
+                    try { SetDelete(fs); } catch (IOException) { /* best effort */ }
+                    throw e is PresetException ? e : new PresetException("Não foi possível salvar a imagem");
+                }
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { throw new PresetException("Não foi possível salvar a imagem"); }
-            finally { if (!ok) try { File.Delete(path); } catch { } } // the stream is closed by now
         }
         throw new PresetException("Não foi possível salvar a imagem");
+    }
+
+    static void SetDelete(FileStream fs)
+    {
+        var info = new FILE_DISPOSITION_INFO { DeleteFile = true };
+        if (!PInvoke.SetFileInformationByHandle(fs.SafeFileHandle, FILE_INFO_BY_HANDLE_CLASS.FileDispositionInfo, MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref info, 1))))
+            throw new IOException();
     }
 
     static string FinalPath(FileStream fs)
@@ -83,8 +102,13 @@ public static class ScreenshotSaver
 }
 
 /// <summary>screenshot: { "target": "screen"|"window", "save": bool, "folder": string, "copy": bool }.</summary>
-public sealed class ScreenshotPreset(IScreenCapture capture, IWindows windows, Func<DateTime> now) : IPreset
+public sealed class ScreenshotPreset(IScreenCapture capture, IWindows windows, Func<DateTime> now, string? defaultFolder = null) : IPreset
 {
+    /// <summary>The folder Windows shows as "Capturas de Tela".</summary>
+    public static string DefaultFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
+
+    readonly string defaultDir = defaultFolder ?? DefaultFolder;
+
     public string Id => "screenshot";
     public string DisplayName => "Captura de tela";
     public IconRef DefaultIcon => new("glyph", "E722");
@@ -111,7 +135,24 @@ public sealed class ScreenshotPreset(IScreenCapture capture, IWindows windows, F
     public string? CheckReady(JsonObject p)
     {
         if (Target(p) == "window" && windows.Foreground() == 0) return "Nenhuma janela em foco";
-        return Save(p) ? ScreenshotSaver.CheckFolder(Params.Str(p, "folder")!) : null;
+        if (!Save(p)) return null;
+        var folder = Params.Str(p, "folder")!;
+        EnsureDefaultFolder(folder);
+        return ScreenshotSaver.CheckFolder(folder);
+    }
+
+    /// <summary>Only the default folder is created, and only inside an existing, ordinary Pictures folder.</summary>
+    void EnsureDefaultFolder(string folder)
+    {
+        try
+        {
+            var full = Path.GetFullPath(folder);
+            if (Directory.Exists(full) || !string.Equals(Path.TrimEndingDirectorySeparator(full), Path.TrimEndingDirectorySeparator(Path.GetFullPath(defaultDir)), StringComparison.OrdinalIgnoreCase)) return;
+            var parent = Path.GetDirectoryName(full);
+            if (parent is null || ScreenshotSaver.CheckFolder(parent) is not null) return;
+            Directory.CreateDirectory(full);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { /* CheckFolder reports it */ }
     }
 
     public Task RunAsync(JsonObject p, CancellationToken ct)
@@ -125,8 +166,9 @@ public sealed class ScreenshotPreset(IScreenCapture capture, IWindows windows, F
         }
         else png = capture.CaptureMonitorUnderMouse();
 
-        if (Save(p)) ScreenshotSaver.Save(Params.Str(p, "folder")!, png, now());
+        // Copy first: a failed save must not hide a successful copy
         if (Copy(p)) capture.CopyImage(png);
+        if (Save(p)) ScreenshotSaver.Save(Params.Str(p, "folder")!, png, now());
         return Task.CompletedTask;
     }
 }

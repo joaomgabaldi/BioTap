@@ -36,7 +36,7 @@ sealed class ScreenCapture(DispatcherQueue ui) : IScreenCapture
         try
         {
             var h = (HWND)window;
-            if (!PInvoke.IsWindow(h)) return null;
+            if (!PInvoke.IsWindow(h) || PInvoke.IsIconic(h)) return null; // a minimized window has no pixels on screen
             RECT frame = default;
             // The visible frame, without the invisible resize border Windows 10/11 adds around a window
             if (PInvoke.DwmGetWindowAttribute(h, DWMWINDOWATTRIBUTE.DWMWA_EXTENDED_FRAME_BOUNDS, MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref frame, 1))).Failed) return null;
@@ -62,9 +62,11 @@ sealed class ScreenCapture(DispatcherQueue ui) : IScreenCapture
     public void CopyImage(byte[] png)
     {
         Exception? error = null;
-        using var done = new ManualResetEventSlim();
+        var done = new ManualResetEventSlim(); // never disposed: the queued work may still touch it after a timeout
+        int state = 0; // 0 queued, 1 running, 2 abandoned by the caller
         void Work()
         {
+            if (Interlocked.CompareExchange(ref state, 1, 0) != 0) return; // the caller already reported a failure
             try
             {
                 var stream = new InMemoryRandomAccessStream();
@@ -80,6 +82,10 @@ sealed class ScreenCapture(DispatcherQueue ui) : IScreenCapture
         }
         if (ui.HasThreadAccess) Work();
         else if (!ui.TryEnqueue(Work)) throw new PresetException("Não foi possível copiar a imagem");
-        if (!done.Wait(TimeSpan.FromSeconds(2)) || error is not null) throw new PresetException("Não foi possível copiar a imagem");
+        // Not started within 2 s: cancel it. Already running: give it a little more time to finish
+        if (!done.Wait(TimeSpan.FromSeconds(2)) && Interlocked.CompareExchange(ref state, 2, 0) == 0
+            || !done.IsSet && !done.Wait(TimeSpan.FromSeconds(2))
+            || error is not null)
+            throw new PresetException("Não foi possível copiar a imagem");
     }
 }

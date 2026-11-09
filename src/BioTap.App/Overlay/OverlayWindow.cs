@@ -54,6 +54,9 @@ sealed class OverlayWindow
         PInvoke.SetWindowLong(hwnd, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE, ex);
         PInvoke.SetLayeredWindowAttributes(hwnd, default, 255, LAYERED_WINDOW_ATTRIBUTES_FLAGS.LWA_ALPHA);
 
+        // Keep the pill out of screenshots (the action runs after the overlay is shown); fails on Windows older than 10 2004, where it may show up
+        _ = PInvoke.SetWindowDisplayAffinity(hwnd, WINDOW_DISPLAY_AFFINITY.WDA_EXCLUDEFROMCAPTURE);
+
         hideTimer = window.DispatcherQueue.CreateTimer();
         hideTimer.IsRepeating = false;
         hideTimer.Tick += (_, _) => Ui.Run(window.AppWindow.Hide, "overlay hide");

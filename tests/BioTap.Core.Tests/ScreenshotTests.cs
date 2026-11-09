@@ -140,4 +140,53 @@ public sealed class ScreenshotTests : IDisposable
         cap.WindowPng = null;
         await Assert.ThrowsAsync<PresetException>(() => preset.RunAsync(P("window", copy: false, folder: dir), default));
     }
+
+    [Fact]
+    public void Save_WriteFailure_LeavesNoFile()
+    {
+        Assert.Throws<PresetException>(() => ScreenshotSaver.Save(dir, [1], T, (fs, _) => { fs.WriteByte(1); throw new IOException(); }));
+        Assert.Empty(Directory.GetFiles(dir));
+    }
+
+    [Fact]
+    public async Task Run_CopyHappensBeforeSave_SoSaveFailureKeepsTheCopy()
+    {
+        var (preset, cap, _) = Make();
+        await Assert.ThrowsAsync<PresetException>(() => preset.RunAsync(P(folder: Path.Combine(dir, "nope")), default));
+        Assert.Equal(["Monitor", "Copy:3"], cap.Calls);
+    }
+
+    [Fact]
+    public void DefaultFolder_IsCreatedWhenMissing_IfParentExists()
+    {
+        var pictures = Directory.CreateDirectory(Path.Combine(dir, "Pictures")).FullName;
+        var def = Path.Combine(pictures, "Screenshots");
+        var preset = new ScreenshotPreset(new FakeScreenCapture(), new FakeWindows(), () => T, def);
+        Assert.Null(preset.CheckReady(P(folder: def)));
+        Assert.True(Directory.Exists(def));
+    }
+
+    [Fact]
+    public void DefaultFolder_NotCreated_WhenParentMissing_OrFolderIsOther()
+    {
+        var def = Path.Combine(dir, "NoPictures", "Screenshots");
+        var preset = new ScreenshotPreset(new FakeScreenCapture(), new FakeWindows(), () => T, def);
+        Assert.Equal("Pasta não encontrada", preset.CheckReady(P(folder: def)));
+        Directory.CreateDirectory(Path.Combine(dir, "Pictures"));
+        var other = Path.Combine(dir, "Pictures", "Other");
+        var preset2 = new ScreenshotPreset(new FakeScreenCapture(), new FakeWindows(), () => T, Path.Combine(dir, "Pictures", "Screenshots"));
+        Assert.Equal("Pasta não encontrada", preset2.CheckReady(P(folder: other)));
+        Assert.False(Directory.Exists(other));
+    }
+
+    [Fact]
+    public void DefaultFolder_NotCreated_WhenParentIsJunction()
+    {
+        var real = Directory.CreateDirectory(Path.Combine(dir, "real4")).FullName;
+        var pictures = Junction(real);
+        var def = Path.Combine(pictures, "Screenshots");
+        var preset = new ScreenshotPreset(new FakeScreenCapture(), new FakeWindows(), () => T, def);
+        Assert.NotNull(preset.CheckReady(P(folder: def)));
+        Assert.Empty(Directory.GetFileSystemEntries(real));
+    }
 }

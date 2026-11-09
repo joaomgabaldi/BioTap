@@ -36,7 +36,7 @@ static class PresetEditors
         // A new action has no params yet: show the defaults; Read writes them all
         var target = new RadioButtons { Header = "O que capturar", Items = { "Tela", "Janela atual" }, SelectedIndex = S("target") == "window" ? 1 : 0 };
         var save = new CheckBox { Content = "Salvar em uma pasta", IsChecked = B("save", true) };
-        var folder = new TextBox { Header = "Pasta", Text = S("folder") is { Length: > 0 } f ? f : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots"), MinWidth = 320 };
+        var folder = new TextBox { Header = "Pasta", Text = S("folder") is { Length: > 0 } f ? f : ScreenshotPreset.DefaultFolder, MinWidth = 320 };
         var browse = new Button { Content = "Procurar…" };
         browse.Click += (_, _) => Ui.RunAsync(async () =>
         {

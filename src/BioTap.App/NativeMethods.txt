@@ -33,3 +33,5 @@ GetMonitorInfo
 MONITORINFO
 MONITOR_FROM_FLAGS
 IsWindow
+SetWindowDisplayAffinity
+WINDOW_DISPLAY_AFFINITY
