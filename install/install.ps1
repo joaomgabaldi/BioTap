@@ -53,6 +53,12 @@ if (-not (Test-Path $data)) {
     icacls $data /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' /Q | Out-Null
     icacls $data /setowner '*S-1-5-32-544' /Q | Out-Null
 }
+# Logs never hold secrets (no typed text, clipboard or command arguments), so users may READ them to diagnose
+# problems without elevation; writing stays admin-only. The folder inherits the admin-only ACL plus this grant.
+$logs = Join-Path $data 'logs'
+if ((Test-Path $logs) -and ((Get-Item $logs -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "$logs e um ponto de reparse." }
+New-Item -ItemType Directory -Force $logs | Out-Null
+icacls $logs /grant '*S-1-5-32-545:(OI)(CI)RX' /Q | Out-Null
 
 if (Get-Service $svc -ErrorAction SilentlyContinue) {
     sc.exe config $svc binPath= "`"$exe`"" start= auto obj= LocalSystem | Out-Null

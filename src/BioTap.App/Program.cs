@@ -12,7 +12,7 @@ public static class Program
     [STAThread]
     static int Main()
     {
-        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Write("FATAL", $"Unhandled {e.ExceptionObject.GetType().Name}");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Write("FATAL", $"Unhandled: {e.ExceptionObject}");
 
         using var instance = SingleInstance.TryStart(DataFolder, Log);
         if (instance is null) return 0; // another BioTap is running; it was asked to show the panel

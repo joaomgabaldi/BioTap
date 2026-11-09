@@ -64,7 +64,7 @@ sealed class PanelWindow
         if (items.Count == 0)
             row.Children.Add(new TextBlock { Text = PanelModel.EmptyText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 18, 8, 0), Opacity = 0.8 });
         foreach (var item in items) row.Children.Add(Tile(item));
-        row.Children.Add(new Rectangle { Width = 1, Fill = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"], Margin = new Thickness(2, 4, 2, 4) });
+        row.Children.Add(new Rectangle { Width = 1, Fill = Theme.Brush("DividerStrokeColorDefaultBrush", Theme.Divider), Margin = new Thickness(2, 4, 2, 4) });
         var gear = new Button
         {
             Content = new FontIcon { Glyph = "", FontSize = 16 },

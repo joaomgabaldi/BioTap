@@ -1,8 +1,6 @@
 using BioTap.App.Shell;
 using H.NotifyIcon;
-using Microsoft.UI;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 using Windows.Win32;
 using Windows.Win32.UI.WindowsAndMessaging;
 
@@ -25,27 +23,30 @@ sealed class TrayIcon : IDisposable
 
         icon = new TaskbarIcon
         {
-            IconSource = new GeneratedIconSource
-            {
-                Text = "", // Fingerprint
-                FontFamily = new FontFamily("Segoe Fluent Icons"),
-                Foreground = new SolidColorBrush(Colors.White),
-                Size = 32,
-            },
+            // A real .ico (fingerprint glyph, 16–256 px); the generated-from-font icon came out blank
+            Icon = new System.Drawing.Icon(Path.Combine(AppContext.BaseDirectory, "Assets", "BioTap.ico")),
             ToolTipText = "BioTap",
             NoLeftClickDelay = true,
-            LeftClickCommand = new RelayCommand(() => Clicked?.Invoke()),
+            LeftClickCommand = new RelayCommand(() => Safe(Clicked, "tray click")),
             ContextMenuMode = ContextMenuMode.PopupMenu,
             ContextFlyout = new MenuFlyout
             {
                 Items =
                 {
-                    new MenuFlyoutItem { Text = "Preferências", Command = new RelayCommand(() => SettingsRequested?.Invoke()) },
-                    new MenuFlyoutItem { Text = "Sair", Command = new RelayCommand(() => ExitRequested?.Invoke()) },
+                    new MenuFlyoutItem { Text = "Preferências", Command = new RelayCommand(() => Safe(SettingsRequested, "tray settings")) },
+                    new MenuFlyoutItem { Text = "Sair", Command = new RelayCommand(() => Safe(ExitRequested, "tray exit")) },
                 },
             },
         };
         icon.ForceCreate();
+    }
+
+    // Tray callbacks come from a native window procedure: an exception escaping here is a fail-fast in combase
+    // (it never reaches Application.UnhandledException), so the whole app would close.
+    static void Safe(Action? handler, string what)
+    {
+        try { handler?.Invoke(); }
+        catch (Exception e) { Program.Log.Write("ERROR", $"{what}: {e}"); }
     }
 
     public void SetTooltip(string text) => icon.ToolTipText = text;

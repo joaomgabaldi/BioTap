@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using BioTap.App.Overlay;
+using BioTap.App.Shell;
 using BioTap.Core;
 using BioTap.Core.Actions;
 using BioTap.Core.Config;
@@ -121,7 +122,7 @@ sealed class SettingsWindow
             item.Click += async (_, _) => await EditAsync(ActionEditor.NewAction(saved, preset), isNew: true);
             ((MenuFlyout)add.Flyout).Items.Add(item);
         }
-        page.Children.Add(new TextBlock { Text = "Ações", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
+        page.Children.Add(new TextBlock { Text = "Ações", Style = Theme.Style("SubtitleTextBlockStyle") });
         page.Children.Add(add);
         if (saved.Actions.Count == 0) page.Children.Add(new TextBlock { Text = PanelModel.EmptyText, Opacity = 0.7 });
         foreach (var a in saved.Actions.OrderBy(a => a.Taps)) page.Children.Add(ActionRow(a));
@@ -152,7 +153,7 @@ sealed class SettingsWindow
             if (await ShowDialogAsync(confirm) == ContentDialogResult.Primary && await SaveAsync(ActionEditor.Without(saved, a.Id))) ShowPage("actions");
         };
         var preset = host.Presets.Get(a.Preset)?.DisplayName ?? a.Preset;
-        var grid = new Grid { ColumnSpacing = 12, Padding = new Thickness(12), CornerRadius = new CornerRadius(8), Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] };
+        var grid = new Grid { ColumnSpacing = 12, Padding = new Thickness(12), CornerRadius = new CornerRadius(8), Background = Theme.Brush("CardBackgroundFillColorDefaultBrush", Theme.Card) };
         foreach (var w in new[] { 40, 90, 0, 0, 0, 0, 0 }) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = w > 0 ? new GridLength(w) : (grid.ColumnDefinitions.Count == 2 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto) });
         Add(grid, 0, new FontIcon { Glyph = Glyphs.For(new(OutcomeKind.Ran, "", null, a.Icon)), FontSize = 22 });
         Add(grid, 1, new TextBlock { Text = $"{a.Taps} toques", VerticalAlignment = VerticalAlignment.Center });
@@ -276,7 +277,7 @@ sealed class SettingsWindow
     UIElement GeneralPage()
     {
         var timeout = new NumberBox { Header = "Tempo para fechar a sequência de toques (ms)", Minimum = TapCounter.MinTimeoutMs, Maximum = TapCounter.MaxTimeoutMs, Value = saved.TapTimeoutMs, SmallChange = 50, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left };
-        var save = new Button { Content = "Salvar", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+        var save = new Button { Content = "Salvar", Style = Theme.Style("AccentButtonStyle") };
         save.Click += async (_, _) => await SaveAsync(saved with { TapTimeoutMs = double.IsNaN(timeout.Value) ? saved.TapTimeoutMs : (int)Math.Round(timeout.Value) });
 
         var startup = new StartupTask();
@@ -313,7 +314,7 @@ sealed class SettingsWindow
             Spacing = 16,
             Children =
             {
-                new TextBlock { Text = "Geral", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] },
+                new TextBlock { Text = "Geral", Style = Theme.Style("SubtitleTextBlockStyle") },
                 timeout, save, startWithWindows,
                 new TextBlock { Text = "Estado: " + host.StatusText["BioTap: ".Length..], Opacity = 0.8 },
             },
@@ -328,12 +329,12 @@ sealed class SettingsWindow
     {
         var show = new ToggleSwitch { Header = "Mostrar o overlay quando uma ação roda", IsOn = saved.Overlay.Enabled };
         var duration = new NumberBox { Header = "Tempo na tela (ms)", Minimum = OverlayConfig.MinDurationMs, Maximum = OverlayConfig.MaxDurationMs, Value = saved.Overlay.DurationMs, SmallChange = 250, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left };
-        var save = new Button { Content = "Salvar", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+        var save = new Button { Content = "Salvar", Style = Theme.Style("AccentButtonStyle") };
         save.Click += async (_, _) => await SaveAsync(saved with { Overlay = new OverlayConfig(show.IsOn, double.IsNaN(duration.Value) ? saved.Overlay.DurationMs : (int)Math.Round(duration.Value)) });
         return new StackPanel
         {
             Spacing = 16,
-            Children = { new TextBlock { Text = "Aparência e feedback", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] }, show, duration, save },
+            Children = { new TextBlock { Text = "Aparência e feedback", Style = Theme.Style("SubtitleTextBlockStyle") }, show, duration, save },
         };
     }
 }
