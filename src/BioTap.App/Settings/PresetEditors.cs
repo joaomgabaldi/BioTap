@@ -23,6 +23,8 @@ static class PresetEditors
             "shortcut" => Shortcut(S, B),
             "volumeUp" or "volumeDown" => VolumeStep(p),
             "typeText" => TypeText(S("text")),
+            "audioCycle" => AudioCycle(p),
+            "volumeSet" => VolumeSet(p),
             "openTarget" => OpenTarget(S, windowId),
             _ => (new StackPanel(), () => (JsonObject)p.DeepClone()), // no params to edit (copy, paste…); keep whatever is stored
         };
@@ -120,5 +122,53 @@ static class PresetEditors
         box.TextChanged += (_, _) => Ui.Run(Refresh, "text counter");
         Refresh();
         return (new StackPanel { Spacing = 4, Children = { box, counter } }, () => new JsonObject { ["text"] = box.Text });
+    }
+
+    static (UIElement, Func<JsonObject>) VolumeSet(JsonObject p)
+    {
+        var current = p["percent"] is JsonValue v && v.TryGetValue<int>(out var s) ? s : 50;
+        var percent = new NumberBox { Header = "Volume (%)", Minimum = 0, Maximum = 100, Value = current, SmallChange = 5, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left };
+        return (percent, () => double.IsNaN(percent.Value) ? new JsonObject() : new JsonObject { ["percent"] = (int)Math.Round(percent.Value) });
+    }
+
+    sealed class AudioRow(string id, string label, bool isChecked) { public string Id = id; public string Label = label; public bool Checked = isChecked; }
+
+    static (UIElement, Func<JsonObject>) AudioCycle(JsonObject p)
+    {
+        var saved = p["deviceIds"] is JsonArray a ? a.Select(n => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : "").Where(s => s.Length > 0).Distinct().ToList() : [];
+        var panel = new StackPanel { Spacing = 4 };
+        List<AudioDevice> present;
+        try { present = [.. new Os.WindowsAudio().Outputs()]; }
+        catch (Exception e)
+        {
+            Program.Log.Write("ERROR", "Audio list: " + e.GetType().Name);
+            panel.Children.Add(new TextBlock { Text = "Não foi possível listar os dispositivos" });
+            return (panel, () => (JsonObject)p.DeepClone()); // keep whatever is stored
+        }
+
+        // saved ones first, in their saved order (also when unplugged), then the other connected devices
+        var rows = saved.Select(id => present.FirstOrDefault(d => d.Id == id) is { } d ? new AudioRow(id, d.Name, true) : new AudioRow(id, id + " (desconectado)", true)).ToList();
+        rows.AddRange(present.Where(d => !saved.Contains(d.Id)).Select(d => new AudioRow(d.Id, d.Name, false)));
+
+        void Render()
+        {
+            panel.Children.Clear();
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                var box = new CheckBox { Content = row.Label, IsChecked = row.Checked, MinWidth = 320 };
+                box.Checked += (_, _) => Ui.Run(() => row.Checked = true, "audio device check");
+                box.Unchecked += (_, _) => Ui.Run(() => row.Checked = false, "audio device check");
+                var up = new Button { Content = "↑", IsEnabled = i > 0 };
+                var down = new Button { Content = "↓", IsEnabled = i < rows.Count - 1 };
+                int at = i;
+                up.Click += (_, _) => Ui.Run(() => { (rows[at - 1], rows[at]) = (rows[at], rows[at - 1]); Render(); }, "audio move up");
+                down.Click += (_, _) => Ui.Run(() => { (rows[at + 1], rows[at]) = (rows[at], rows[at + 1]); Render(); }, "audio move down");
+                panel.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { box, up, down } });
+            }
+        }
+        Render();
+
+        return (panel, () => new JsonObject { ["deviceIds"] = new JsonArray([.. rows.Where(r => r.Checked).Select(r => (JsonNode?)JsonValue.Create(r.Id))]) });
     }
 }

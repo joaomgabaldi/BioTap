@@ -23,3 +23,12 @@ GetWindowThreadProcessId
 ShowWindowAsync
 DwmGetWindowAttribute
 DWMWINDOWATTRIBUTE
+MMDeviceEnumerator
+IMMDeviceEnumerator
+IAudioEndpointVolume
+PKEY_Device_FriendlyName
+PropVariantToString
+PropVariantClear
+STGM
+ERole
+EDataFlow

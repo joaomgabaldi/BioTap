@@ -23,6 +23,7 @@ sealed class AppHost(DispatcherQueue ui)
     readonly ShellLauncher launcher = new();
     readonly Os.SendInputKeyboard keyboard = new();
     readonly Os.Win32Windows windows = new();
+    readonly Os.WindowsAudio audio = new();
     PresetCatalog presets = null!;
     ServiceConnection connection = null!;
     TapRouter router = null!;
@@ -55,6 +56,7 @@ sealed class AppHost(DispatcherQueue ui)
             new VolumeStepPreset(keyboard, up: true), new VolumeStepPreset(keyboard, up: false),
             new TypeTextPreset(keyboard),
             new TopmostPreset(windows), new MinimizeOthersPreset(windows), new LockPreset(windows),
+            new AudioCyclePreset(audio), new VolumeSetPreset(audio),
         ]);
         Reload();
 

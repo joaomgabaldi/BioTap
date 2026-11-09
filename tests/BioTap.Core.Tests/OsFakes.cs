@@ -20,3 +20,14 @@ sealed class FakeWindows : IWindows
     public void MinimizeAllExcept(nint window) => Calls.Add($"MinimizeExcept({window})");
     public void Lock() => Calls.Add("Lock");
 }
+
+sealed class FakeAudio : IAudio
+{
+    public List<AudioDevice> Devices = [];
+    public string? Active;
+    public readonly List<string> Calls = [];
+    public IReadOnlyList<AudioDevice> Outputs() => Devices;
+    public string? ActiveOutputId() => Active;
+    public void SetDefaultOutput(string id) => Calls.Add("Default:" + id);
+    public void SetVolume(int percent) => Calls.Add("Volume:" + percent);
+}
