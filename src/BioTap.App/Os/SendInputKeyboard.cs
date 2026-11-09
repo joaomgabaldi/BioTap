@@ -12,10 +12,11 @@ sealed class SendInputKeyboard : IKeyboard
 
     public void Chord(IReadOnlyList<ushort> keys)
     {
-        var inputs = new List<INPUT>();
-        foreach (var k in keys) inputs.Add(Key(k, up: false));
-        for (var i = keys.Count - 1; i >= 0; i--) inputs.Add(Key(keys[i], up: true));
-        Send(inputs);
+        var downs = keys.Select(k => Key(k, up: false)).ToList();
+        var ups = keys.Reverse().Select(k => Key(k, up: true)).ToList();
+        // Releasing a key that is not down is harmless; a modifier left down is not
+        try { Send(downs); }
+        finally { Send(ups); }
     }
 
     public void Tap(ushort key, int times)

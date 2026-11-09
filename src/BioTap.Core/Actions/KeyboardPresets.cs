@@ -12,6 +12,7 @@ public sealed class ShortcutPreset(IKeyboard kb) : IPreset
 
     public string? ValidateParams(JsonObject p)
     {
+        if (new[] { "ctrl", "alt", "shift", "win" }.Any(m => p[m] is { } n && !(n is JsonValue v && v.TryGetValue<bool>(out _)))) return "Atalho inválido.";
         var name = Params.Str(p, "key");
         if (string.IsNullOrEmpty(name)) return "Escolha a tecla.";
         if (!ShortcutKeys.All.ContainsKey(name)) return "Tecla inválida.";
@@ -31,8 +32,17 @@ public sealed class ShortcutPreset(IKeyboard kb) : IPreset
         if (Params.Bool(p, "alt", false)) keys.Add(Vk.Menu);
         if (Params.Bool(p, "win", false)) keys.Add(Vk.LWin);
         keys.Add(ShortcutKeys.All[Params.Str(p, "key")!]);
-        if (keys.Count == 1) kb.Tap(keys[0], 1); else kb.Chord(keys);
+        KeyPress.Send(kb, keys);
         return Task.CompletedTask;
+    }
+}
+
+static class KeyPress
+{
+    /// <summary>One key is tapped; two or more are a chord.</summary>
+    public static void Send(IKeyboard kb, IReadOnlyList<ushort> keys)
+    {
+        if (keys.Count == 1) kb.Tap(keys[0], 1); else kb.Chord(keys);
     }
 }
 
@@ -47,7 +57,7 @@ public sealed class KeyPreset(string id, string name, string glyph, IKeyboard kb
 
     public Task RunAsync(JsonObject p, CancellationToken ct)
     {
-        if (keys.Length == 1) kb.Tap(keys[0], 1); else kb.Chord(keys);
+        KeyPress.Send(kb, keys);
         return Task.CompletedTask;
     }
 }
@@ -91,7 +101,8 @@ public sealed class TypeTextPreset(IKeyboard kb) : IPreset
 
     public Task RunAsync(JsonObject p, CancellationToken ct)
     {
-        kb.Type(Params.Str(p, "text")!);
+        // WinUI text boxes store line breaks as "\r": every kind becomes "\n" (Enter)
+        kb.Type(Params.Str(p, "text")!.Replace("\r\n", "\n").Replace('\r', '\n'));
         return Task.CompletedTask;
     }
 }

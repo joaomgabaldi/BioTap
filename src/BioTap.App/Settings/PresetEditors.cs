@@ -24,7 +24,7 @@ static class PresetEditors
             "volumeUp" or "volumeDown" => VolumeStep(p),
             "typeText" => TypeText(S("text")),
             "openTarget" => OpenTarget(S, windowId),
-            _ => (new StackPanel(), () => new JsonObject()), // copy, paste, mute, playPause… have no params
+            _ => (new StackPanel(), () => (JsonObject)p.DeepClone()), // no params to edit (copy, paste…); keep whatever is stored
         };
     }
 

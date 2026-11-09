@@ -79,11 +79,23 @@ public sealed class KeyboardPresetTests
     public void VolumeStep_Validate_Ok(int step)
         => Assert.Null(new VolumeStepPreset(kb, false).ValidateParams(new JsonObject { ["step"] = step }));
 
-    [Fact]
-    public async Task TypeText_PassesTextUnchanged()
+    [Theory]
+    [InlineData("olá 👍\r\nfim", "olá 👍\nfim")]
+    [InlineData("a\rb", "a\nb")]
+    [InlineData("a\nb", "a\nb")]
+    public async Task TypeText_NormalizesNewlines_KeepsEverythingElse(string text, string expected)
     {
-        await new TypeTextPreset(kb).RunAsync(new JsonObject { ["text"] = "olá 👍\r\nfim" }, default);
-        Assert.Equal(["Type:olá 👍\r\nfim"], kb.Calls);
+        await new TypeTextPreset(kb).RunAsync(new JsonObject { ["text"] = text }, default);
+        Assert.Equal(["Type:" + expected], kb.Calls);
+    }
+
+    [Theory]
+    [InlineData("yes")]
+    [InlineData(1)]
+    public void Shortcut_NonBoolModifier_IsInvalid(object value)
+    {
+        var node = value is string s ? JsonValue.Create(s) : JsonValue.Create((int)value);
+        Assert.Equal("Atalho inválido.", new ShortcutPreset(kb).ValidateParams(new JsonObject { ["ctrl"] = node, ["key"] = "C" }));
     }
 
     [Fact]
