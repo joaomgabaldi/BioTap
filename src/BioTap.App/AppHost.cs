@@ -21,6 +21,7 @@ sealed class AppHost(DispatcherQueue ui)
     readonly CancellationTokenSource stop = new();
     readonly ProblemNotifier notifier = new();
     readonly ShellLauncher launcher = new();
+    readonly Os.SendInputKeyboard keyboard = new();
     PresetCatalog presets = null!;
     ServiceConnection connection = null!;
     TapRouter router = null!;
@@ -42,7 +43,17 @@ sealed class AppHost(DispatcherQueue ui)
 
     public void Start()
     {
-        presets = new PresetCatalog([new OpenTargetPreset(launcher), new RunCommandPreset(launcher)]);
+        presets = new PresetCatalog(
+        [
+            new OpenTargetPreset(launcher), new RunCommandPreset(launcher),
+            new ShortcutPreset(keyboard),
+            new KeyPreset("copy", "Copiar", "E8C8", keyboard, Vk.Control, 0x43),
+            new KeyPreset("paste", "Colar", "E77F", keyboard, Vk.Control, 0x56),
+            new KeyPreset("mute", "Silenciar ou reativar o som", "E74F", keyboard, Vk.VolumeMute),
+            new KeyPreset("playPause", "Tocar ou pausar", "E768", keyboard, Vk.MediaPlayPause),
+            new VolumeStepPreset(keyboard, up: true), new VolumeStepPreset(keyboard, up: false),
+            new TypeTextPreset(keyboard),
+        ]);
         Reload();
 
         overlay = new OverlayWindow();

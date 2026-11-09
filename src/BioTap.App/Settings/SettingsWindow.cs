@@ -7,7 +7,6 @@ using BioTap.Core.Config;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.Windows.Storage.Pickers;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 
@@ -198,7 +197,7 @@ sealed class SettingsWindow
             icon.Items.Add(new ComboBoxItem { Tag = action.Icon.Value, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = action.Icon.GlyphText() }, new TextBlock { Text = "Atual" } } } });
         icon.SelectedItem = icon.Items.Cast<ComboBoxItem>().First(i => (string)i.Tag == action.Icon.Value);
         var error = new InfoBar { Severity = InfoBarSeverity.Error, IsClosable = false };
-        var fields = PresetFields(action.Preset, action.Params);
+        var fields = PresetEditors.Build(action.Preset, action.Params, window.AppWindow.Id);
 
         var dialog = new ContentDialog
         {
@@ -246,49 +245,6 @@ sealed class SettingsWindow
 
         if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && await SaveAsync(ActionEditor.WithAction(saved, Edited())))
             ShowPage("actions");
-    }
-
-    (UIElement Panel, Func<JsonObject> Read) PresetFields(string preset, JsonObject p)
-    {
-        string S(string key) => p[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
-        bool B(string key, bool fallback) => p[key] is JsonValue v && v.TryGetValue<bool>(out var b) ? b : fallback;
-
-        if (preset == "runCommand")
-        {
-            var shell = new ComboBox { Header = "Shell", Items = { "powershell", "cmd" }, SelectedItem = S("shell") == "cmd" ? "cmd" : "powershell" };
-            var command = new TextBox { Header = "Comando", Text = S("command"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 90, FontFamily = new FontFamily("Cascadia Mono, Consolas") };
-            var show = new ToggleSwitch { Header = "Mostrar janela", IsOn = B("showWindow", true) };
-            var admin = new ToggleSwitch { Header = "Executar como administrador", IsOn = B("runAsAdmin", false) };
-            return (new StackPanel { Spacing = 12, Children = { shell, command, show, admin } }, () => new JsonObject
-            {
-                ["shell"] = (string)shell.SelectedItem, ["command"] = command.Text, ["showWindow"] = show.IsOn, ["runAsAdmin"] = admin.IsOn,
-            });
-        }
-
-        // openTarget
-        var target = new TextBox { Header = "Programa, arquivo ou URL", Text = S("target"), PlaceholderText = @"C:\Program Files\...\app.exe  ou  https://..." };
-        var browse = new Button { Content = "Procurar…" };
-        browse.Click += async (_, _) =>
-        {
-            // Windows App SDK picker: unlike the WinRT one, it works in an elevated app
-            try
-            {
-                var picker = new FileOpenPicker(window.AppWindow.Id) { ViewMode = PickerViewMode.List };
-                picker.FileTypeFilter.Add("*");
-                if (await picker.PickSingleFileAsync() is { } file) target.Text = file.Path;
-            }
-            catch (Exception e)
-            {
-                Program.Log.Write("ERROR", "File picker: " + e.GetType().Name);
-            }
-        };
-        var args = new TextBox { Header = "Argumentos (opcional)", Text = S("args") };
-        return (new StackPanel { Spacing = 12, Children = { new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { target, browse } }, args } }, () =>
-        {
-            var o = new JsonObject { ["target"] = target.Text.Trim() };
-            if (!string.IsNullOrWhiteSpace(args.Text)) o["args"] = args.Text;
-            return o;
-        });
     }
 
     // ---------- Geral ----------
