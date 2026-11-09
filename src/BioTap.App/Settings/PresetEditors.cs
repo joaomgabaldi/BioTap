@@ -91,7 +91,7 @@ static class PresetEditors
                 swap(null);
                 Render();
             }, "sequence step back");
-            swap(new ScrollViewer { Content = new StackPanel { Spacing = 12, MinWidth = 460, Children = { back, new TextBlock { Text = NameOf(row.Preset), Style = Theme.Style("SubtitleTextBlockStyle") }, editor.Panel } } });
+            swap(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = new StackPanel { Spacing = 12, MinWidth = 460, Children = { back, new TextBlock { Text = NameOf(row.Preset), Style = Theme.Style("SubtitleTextBlockStyle") }, editor.Panel } } });
         }
 
         void Render()

@@ -32,25 +32,39 @@ sealed class OverlayWindow
 
         hideTimer = glass.Window.DispatcherQueue.CreateTimer();
         hideTimer.IsRepeating = false;
-        hideTimer.Tick += (_, _) => Ui.Run(() => glass.Hide(), "overlay hide");
+        // Every exit ends by presenting the next queued outcome, if any
+        hideTimer.Tick += (_, _) => Ui.Run(() => glass.Hide(Next), "overlay hide");
     }
 
     /// <summary>
-    /// Shows <paramref name="o"/>. A pill already on screen first leaves (sinks and fades) and the new one then
-    /// enters; outcomes arriving during that exit replace each other, so only the latest enters.
-    /// <paramref name="panel"/> is the open panel's bounds, to stay above it. Call on the UI thread.
+    /// Shows <paramref name="o"/>. Every outcome gets its own pill: one already on screen finishes rising, then
+    /// sinks at once (without waiting for its time) and the next one rises. <paramref name="panel"/> is the open
+    /// panel's bounds, to stay above it. Call on the UI thread.
     /// </summary>
     public void Show(ActionOutcome o, TimeSpan duration, RectInt32? panel)
     {
-        if (glass.IsOnScreen)
-        {
-            hideTimer.Stop();
-            var leaving = next is not null;
-            next = (o, duration, panel);
-            if (!leaving) glass.Hide(() => { if (next is var (no, nd, np)) { next = null; Show(no, nd, np); } });
-            return;
-        }
+        queue.Enqueue((o, duration, panel));
+        if (!glass.IsOnScreen) Next();
+        // Shown or rising: leave as soon as the entrance is over. Leaving: its exit already calls Next.
+        else if (glass.IsShown) Restart(MinVisible - (Environment.TickCount64 - shownAt));
+    }
 
+    readonly Queue<(ActionOutcome, TimeSpan, RectInt32?)> queue = new();
+    long shownAt;
+    // The entrance plus the two frames it waits for the new layout
+    static readonly long MinVisible = (long)Theme.EnterDuration.TotalMilliseconds + 50;
+
+    void Restart(long ms)
+    {
+        hideTimer.Stop();
+        hideTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(1, ms));
+        hideTimer.Start();
+    }
+
+    void Next()
+    {
+        if (!queue.TryDequeue(out var item)) return;
+        var (o, duration, panel) = item;
         var content = Content(o);
         // Pinned to the top-left: in the one frame where the window already has its new size but XAML still draws the
         // previous layout, the content stays where it belongs instead of shifting by half the change (centered text got cut)
@@ -64,13 +78,9 @@ sealed class OverlayWindow
 
         host.Child = content;
         glass.Show(Place(size), scale, activate: false);
-
-        hideTimer.Stop();
-        hideTimer.Interval = duration;
-        hideTimer.Start();
+        shownAt = Environment.TickCount64;
+        Restart(queue.Count > 0 ? MinVisible : (long)duration.TotalMilliseconds);
     }
-
-    (ActionOutcome, TimeSpan, RectInt32?)? next; // waiting for the pill on screen to finish leaving
 
     /// <summary>
     /// The pill's content: icon and name; errors keep their glyph and add the safe detail line. Also drawn as the

@@ -95,7 +95,7 @@ sealed class SettingsWindow
         AutomationProperties.SetName(status, "Estado do sensor");
         nav.SelectionChanged += (_, e) => Ui.Run(() => ShowPage((e.SelectedItem as NavigationViewItem)?.Tag as string), "settings page");
         // One layout for the window's lifetime: the banner keeps a single parent; only the page changes
-        nav.Content = new ScrollViewer { Content = new StackPanel { Padding = new Thickness(35, 36, 35, 35), Children = { banner, pageHost } } };
+        nav.Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = new StackPanel { Padding = new Thickness(35, 36, 35, 35), Children = { banner, pageHost } } };
 
         // Title bar drawn by the app, in the dark theme, with the fingerprint mark
         var titleBar = new Grid
@@ -121,6 +121,7 @@ sealed class SettingsWindow
 
         window = new Window { Title = "BioTap — Preferências", Content = root, ExtendsContentIntoTitleBar = true };
         window.SetTitleBar(titleBar);
+        window.AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "BioTap.ico")); // taskbar and Alt+Tab
         var bar = window.AppWindow.TitleBar;
         bar.PreferredHeightOption = TitleBarHeightOption.Tall;
         bar.ButtonBackgroundColor = bar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
@@ -515,6 +516,7 @@ sealed class SettingsWindow
             DefaultButton = ContentDialogButton.Primary,
             Content = new ScrollViewer
             {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 Content = new StackPanel
                 {
                     Spacing = 12, MinWidth = 460,
