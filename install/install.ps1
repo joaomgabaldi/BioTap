@@ -24,6 +24,8 @@ dotnet publish (Join-Path $repo 'src\BioTap.Service') -c Release -o $bin
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish (servico) falhou.' }
 dotnet publish (Join-Path $repo 'src\BioTap.App') -c Release -o (Join-Path $bin 'App')
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish (app) falhou.' }
+# Sem o BioTap.pri (recursos + XAML compilado) a janela de preferencias derruba o app (fail-fast nativo)
+if (-not (Test-Path (Join-Path $bin 'App\BioTap.pri'))) { throw 'O publish do app saiu sem BioTap.pri (EnableMsixTooling no csproj?).' }
 
 # ProgramData e gravavel por usuarios comuns. Uma pasta BioTap ja existente so e reaproveitada se for confiavel
 # (dona admin/SYSTEM, ninguem mais escreve); senao e renomeada para o lado e uma nova e criada. Nunca usa /T:

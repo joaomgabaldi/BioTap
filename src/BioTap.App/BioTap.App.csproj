@@ -8,6 +8,9 @@
     <AssemblyName>BioTap</AssemblyName>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
+    <!-- Without it `dotnet publish` leaves out BioTap.pri (app resources + compiled XAML): controls like
+         NavigationView then find no template and WinUI fail-fasts natively (0xC000027B), with nothing logged -->
+    <EnableMsixTooling>true</EnableMsixTooling>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
