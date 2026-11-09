@@ -56,7 +56,7 @@ public static class ScreenshotSaver
                 if (File.Exists(path)) continue;
                 throw new PresetException("Não foi possível salvar a imagem");
             }
-            var fs = new FileStream(handle, FileAccess.Write);
+            var fs = new FileStream(handle, FileAccess.Write, bufferSize: 0); // unbuffered: Dispose cannot fail on a pending write and replace the PresetException
             using (fs)
             {
                 try

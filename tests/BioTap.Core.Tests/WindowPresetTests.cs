@@ -46,7 +46,7 @@ public sealed class WindowPresetTests
     }
 
     [Fact]
-    public async Task Lock_IsReady_WithoutForegroundWindow() => Assert.Null(new LockPreset(w).CheckReady([]));
+    public void Lock_IsReady_WithoutForegroundWindow() => Assert.Null(new LockPreset(w).CheckReady([]));
 
     [Fact]
     public async Task ForegroundLostBetweenCheckAndRun_Throws_AndNeverMinimizesEverything()

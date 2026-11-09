@@ -14,7 +14,7 @@ sealed class WindowsAudio : IAudio
 {
     const string NoName = "Dispositivo sem nome";
 
-    public const string InterfaceSuffix = "#{e6327cad-dcec-4949-ae8a-991e976a79d2}";
+    const string InterfaceSuffix = "#{e6327cad-dcec-4949-ae8a-991e976a79d2}";
 
     // WinRT enumeration: no raw pointers needed; ids are converted to MMDevice ids
     public IReadOnlyList<AudioDevice> Outputs()
@@ -64,9 +64,10 @@ sealed class WindowsAudio : IAudio
 
     public void SetVolume(int percent)
     {
-        var en = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+        IMMDeviceEnumerator? en = null;
         try
         {
+            en = (IMMDeviceEnumerator)new MMDeviceEnumerator();
             en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eConsole, out var dev);
             try
             {
@@ -77,6 +78,6 @@ sealed class WindowsAudio : IAudio
             finally { Marshal.FinalReleaseComObject(dev); }
         }
         catch (Exception e) when (e is COMException or InvalidCastException) { throw new PresetException("Não foi possível mudar o volume"); }
-        finally { Marshal.FinalReleaseComObject(en); }
+        finally { if (en is not null) Marshal.FinalReleaseComObject(en); }
     }
 }
