@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using BioTap.App.Os;
 using BioTap.App.Overlay;
 using BioTap.App.Shell;
 using BioTap.Core;
@@ -161,14 +162,18 @@ sealed class SettingsWindow
                 XamlRoot = window.Content.XamlRoot, Title = $"Excluir \"{a.Name}\"?", Content = $"A sequência de {a.Taps} toques deixará de fazer algo.",
                 PrimaryButtonText = "Excluir", CloseButtonText = "Cancelar", DefaultButton = ContentDialogButton.Close,
             };
-            if (await ShowDialogAsync(confirm) == ContentDialogResult.Primary && await SaveAsync(ActionEditor.Without(saved, a.Id))) ShowPage("actions");
+            if (await ShowDialogAsync(confirm) == ContentDialogResult.Primary && await SaveAsync(ActionEditor.Without(saved, a.Id)))
+            {
+                IconCache.Remove(Program.DataFolder, a.Id);
+                ShowPage("actions");
+            }
         }, "delete action");
         var preset = host.Presets.Get(a.Preset)?.DisplayName ?? a.Preset;
         var grid = new Grid { ColumnSpacing = 12, Padding = new Thickness(12), CornerRadius = new CornerRadius(8), Background = Theme.Brush("CardBackgroundFillColorDefaultBrush", Theme.Card) };
         foreach (var w in new[] { 40, 90, 0, 0, 0, 0, 0 }) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = w > 0 ? new GridLength(w) : (grid.ColumnDefinitions.Count == 2 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto) });
         // Spec §5: an action the loader disabled as invalid says so (otherwise it just looks switched off)
         var invalid = host.Loaded.InvalidActions.Contains(a.Id);
-        Add(grid, 0, new FontIcon { Glyph = invalid ? Glyphs.Warning : Glyphs.For(new(OutcomeKind.Ran, "", null, a.Icon)), FontSize = 22 });
+        Add(grid, 0, invalid ? new FontIcon { Glyph = Glyphs.Warning, FontSize = 22 } : Icons.Element(a.Icon, 22));
         Add(grid, 1, new TextBlock { Text = $"{a.Taps} toques", VerticalAlignment = VerticalAlignment.Center });
         Add(grid, 2, new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { new TextBlock { Text = a.Name }, new TextBlock { Text = invalid ? "Inválida — abra Editar para corrigir" : preset, FontSize = 12, Opacity = 0.7 } } });
         Add(grid, 3, enabled);
@@ -190,12 +195,18 @@ sealed class SettingsWindow
         var taps = new NumberBox { Header = "Toques", Minimum = 1, Maximum = Protocol.MaxTaps, Value = action.Taps, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, SmallChange = 1 };
         var name = new TextBox { Header = "Nome (aparece no painel)", Text = action.Name, MaxLength = 80 };
         var icon = new ComboBox { Header = "Ícone", MinWidth = 220 };
+        // Only "Abrir" can show the program's own icon; it is the default for new actions
+        var hasProgramIcon = action.Preset == "openTarget";
+        if (hasProgramIcon)
+            icon.Items.Add(new ComboBoxItem { Tag = "exe", Content = new TextBlock { Text = "Ícone do programa" } });
         foreach (var (glyph, label) in IconChoices)
             icon.Items.Add(new ComboBoxItem { Tag = glyph, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = Glyphs.For(new(OutcomeKind.Ran, "", null, new IconRef("glyph", glyph))) }, new TextBlock { Text = label } } } });
         // A glyph outside the list (set in config.json) stays as it is unless the user picks another
-        if (!IconChoices.Any(c => c.Glyph == action.Icon.Value))
+        if (action.Icon.Kind != "exe" && !IconChoices.Any(c => c.Glyph == action.Icon.Value))
             icon.Items.Add(new ComboBoxItem { Tag = action.Icon.Value, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = action.Icon.GlyphText() }, new TextBlock { Text = "Atual" } } } });
-        icon.SelectedItem = icon.Items.Cast<ComboBoxItem>().First(i => (string)i.Tag == action.Icon.Value);
+        var wantProgramIcon = hasProgramIcon && (isNew || action.Icon.Kind == "exe");
+        var selectedTag = wantProgramIcon ? "exe" : action.Icon.Value;
+        icon.SelectedItem = icon.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == selectedTag) ?? icon.Items[0];
         var error = new InfoBar { Severity = InfoBarSeverity.Error, IsClosable = false };
         ContentDialog? dialogRef = null;
         UIElement? mainContent = null;
@@ -225,7 +236,9 @@ sealed class SettingsWindow
         {
             Taps = double.IsNaN(taps.Value) ? 0 : (int)Math.Round(taps.Value),
             Name = string.IsNullOrWhiteSpace(name.Text) ? host.Presets.Get(action.Preset)?.DisplayName ?? action.Preset : name.Text.Trim(),
-            Icon = new IconRef("glyph", (string)((ComboBoxItem)icon.SelectedItem).Tag),
+            Icon = (string)((ComboBoxItem)icon.SelectedItem).Tag is "exe"
+                ? (action.Icon.Kind == "exe" ? action.Icon : new IconRef("exe", action.Id.ToString("N"))) // real value set by Store on save
+                : new IconRef("glyph", (string)((ComboBoxItem)icon.SelectedItem).Tag),
             Params = fields.Read(),
         };
 
@@ -254,8 +267,17 @@ sealed class SettingsWindow
             host.Router.Test(edited);
         }, "editor test");
 
-        if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && await SaveAsync(ActionEditor.WithAction(saved, Edited())))
-            ShowPage("actions");
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
+        var edited = Edited();
+        if (edited.Icon.Kind == "exe")
+        {
+            var target = edited.Params["target"] is JsonValue v && v.TryGetValue<string>(out var t) ? t : "";
+            var png = await Task.Run(() => new IconExtractor().ExtractPng(target, 48)); // reads the disk
+            edited = edited with { Icon = IconCache.Store(Program.DataFolder, edited.Id, png, host.Presets.Get(edited.Preset)?.DefaultIcon ?? new IconRef("glyph", "E8E5")) };
+        }
+        if (!await SaveAsync(ActionEditor.WithAction(saved, edited))) return;
+        if (edited.Icon.Kind != "exe") IconCache.Remove(Program.DataFolder, edited.Id); // glyph now, or no icon could be read
+        ShowPage("actions");
     }
 
     // ---------- Geral ----------

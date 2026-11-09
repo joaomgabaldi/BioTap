@@ -21,7 +21,7 @@ sealed class OverlayWindow
     const int Height = 48, MaxWidth = 560, MinWidth = 160;
     readonly Window window;
     readonly HWND hwnd;
-    readonly FontIcon icon = new() { FontSize = 20 };
+    readonly ContentControl icon = new();
     readonly TextBlock title = new() { FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     readonly TextBlock detail = new() { FontSize = 12, Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     readonly DispatcherQueueTimer hideTimer;
@@ -65,8 +65,9 @@ sealed class OverlayWindow
     /// <summary>Call on the UI thread.</summary>
     public void Show(ActionOutcome o, TimeSpan duration)
     {
-        icon.Glyph = Glyphs.For(o);
-        icon.Foreground = o.Kind == OutcomeKind.Failed ? new SolidColorBrush(Colors.IndianRed) : null;
+        icon.Content = o.Kind is OutcomeKind.Ran && o.Icon is { } own
+            ? Icons.Element(own, 20)
+            : new FontIcon { Glyph = Glyphs.For(o), FontSize = 20, Foreground = o.Kind == OutcomeKind.Failed ? new SolidColorBrush(Colors.IndianRed) : null };
         title.Text = o.Title;
         detail.Text = o.Detail ?? "";
         detail.Visibility = o.Detail is null ? Visibility.Collapsed : Visibility.Visible;

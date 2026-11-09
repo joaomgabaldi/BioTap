@@ -94,7 +94,7 @@ sealed class PanelWindow
             Width = Square,
             Height = Square,
             Padding = new Thickness(0),
-            Content = new FontIcon { Glyph = Glyphs.For(new(Core.Actions.OutcomeKind.Ran, "", null, item.Icon)), FontSize = 28 },
+            Content = Icons.Element(item.Icon, 28),
         };
         ToolTipService.SetToolTip(button, item.Name);
         button.Click += (_, _) => Ui.Run(() => { Hide(); ItemClicked?.Invoke(item.Id); }, "panel item");
