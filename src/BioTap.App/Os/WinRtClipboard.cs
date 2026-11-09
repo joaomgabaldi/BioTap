@@ -25,8 +25,9 @@ sealed class WinRtClipboard(DispatcherQueue ui) : IClipboardText
         }
         if (ui.HasThreadAccess) Work();
         else if (!ui.TryEnqueue(Work)) return null;
-        if (!done.Wait(TimeSpan.FromSeconds(2)) && Interlocked.CompareExchange(ref state, 2, 0) == 0) return null;
-        if (!done.IsSet && !done.Wait(TimeSpan.FromSeconds(2))) return null;
-        return text;
+        // One 2 s budget in total. Not started in time: abandon it (it will do nothing). Already running: it is the only writer of text, so a late result is simply dropped
+        if (done.Wait(TimeSpan.FromSeconds(2))) return Volatile.Read(ref text);
+        Interlocked.CompareExchange(ref state, 2, 0);
+        return null;
     }
 }
