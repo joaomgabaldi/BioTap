@@ -17,6 +17,8 @@ sealed class FakePreset(string id) : IPreset
     public string? Invalid { get; set; }
     public int Runs;
     public Action? OnRun { get; set; }
+    public bool HangUntilCancelled { get; set; }
+    public CancellationToken Seen;
     public TimeSpan? MaxRun { get; set; }
     public TimeSpan MaxRunTime(JsonObject p) => MaxRun ?? TimeSpan.FromSeconds(60);
     public string? ValidateParams(JsonObject p) => Invalid;
@@ -25,6 +27,8 @@ sealed class FakePreset(string id) : IPreset
     {
         Interlocked.Increment(ref Runs);
         OnRun?.Invoke();
+        Seen = ct;
+        if (HangUntilCancelled) await Task.Delay(Timeout.Infinite, ct);
         if (Gate is not null) await Gate.Task;
         if (Throws is not null) throw Throws;
     }

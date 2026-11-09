@@ -69,13 +69,43 @@ public class SequencePresetTests
     }
 
     [Fact]
-    public void InvalidStep_BlocksBeforeAnyStepRuns()
+    public async Task InvalidStep_BlocksBeforeAnyStepRuns()
     {
         c.Invalid = "motivo";
         var p = Steps(("a", 0), ("b", 0), ("c", 0));
         Assert.Equal("Passo 3 (Fake c): motivo", seq.CheckReady(p));
         Assert.Equal("Passo 3 (Fake c): motivo", seq.ValidateParams(p));
+        var e = await Assert.ThrowsAsync<PresetException>(() => seq.RunAsync(p, CancellationToken.None));
+        Assert.Equal("Passo 3 (Fake c): motivo", e.Message);
         Assert.Equal(0, a.Runs + b.Runs + c.Runs);
+        e = await Assert.ThrowsAsync<PresetException>(() => seq.RunAsync(Steps(("a", 0), ("sequence", 0)), CancellationToken.None));
+        Assert.Equal("Uma sequência não pode conter outra sequência.", e.Message);
+        Assert.Equal(0, a.Runs);
+    }
+
+    [Fact]
+    public async Task StepTimeout_CancelsTheStepToken()
+    {
+        b.HangUntilCancelled = true;
+        b.MaxRun = TimeSpan.FromSeconds(5);
+        var run = seq.RunAsync(Steps(("b", 0)), CancellationToken.None);
+        await Until(() => b.Runs == 1);
+        time.Advance(TimeSpan.FromSeconds(6));
+        var e = await Assert.ThrowsAsync<PresetException>(() => run);
+        Assert.Equal("Passo 1 (Fake b): Tempo esgotado", e.Message);
+        Assert.True(b.Seen.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task OuterCancel_DuringDelay_IsCancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        var run = seq.RunAsync(Steps(("a", 0), ("b", 5000)), cts.Token);
+        await Until(() => a.Runs == 1);
+        await Task.Delay(30);
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+        Assert.Equal(0, b.Runs);
     }
 
     [Fact]
@@ -117,4 +147,11 @@ public class SequencePresetTests
     [Fact]
     public void MaxRunTime_CoversDelaysAndSteps()
         => Assert.Equal(TimeSpan.FromSeconds(125), seq.MaxRunTime(Steps(("a", 0), ("b", 5000))));
+
+    [Fact]
+    public void MaxRunTime_UsesEachStepsOwn()
+    {
+        b.MaxRun = TimeSpan.FromSeconds(100);
+        Assert.Equal(TimeSpan.FromSeconds(60 + 5 + 100 + 60), seq.MaxRunTime(Steps(("a", 0), ("b", 5000), ("nope", 0))));
+    }
 }

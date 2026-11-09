@@ -55,13 +55,15 @@ public sealed class SequencePreset(Func<PresetCatalog> catalog, TimeProvider tim
     public TimeSpan MaxRunTime(JsonObject p)
     {
         var (steps, _) = Parse(p);
-        return steps is null ? PerStep : steps.Aggregate(TimeSpan.Zero, (t, s) => t + TimeSpan.FromMilliseconds(s.DelayMs) + PerStep);
+        if (steps is null) return PerStep;
+        var cat = catalog();
+        return steps.Aggregate(TimeSpan.Zero, (t, s) => t + TimeSpan.FromMilliseconds(s.DelayMs) + (cat.Get(s.Preset)?.MaxRunTime(s.Params) ?? PerStep));
     }
 
     public async Task RunAsync(JsonObject p, CancellationToken ct)
     {
-        var (steps, error) = Parse(p);
-        if (steps is null) throw new PresetException(error!);
+        if (ValidateParams(p) is { } invalid) throw new PresetException(invalid);
+        var steps = Parse(p).Steps!;
         var cat = catalog();
         for (var i = 0; i < steps.Count; i++)
         {
@@ -69,12 +71,17 @@ public sealed class SequencePreset(Func<PresetCatalog> catalog, TimeProvider tim
             var preset = cat.Get(s.Preset) ?? throw new PresetException($"Passo {i + 1}: preset desconhecido.");
             var label = $"Passo {i + 1} ({preset.DisplayName}): ";
             if (s.DelayMs > 0) await Task.Delay(TimeSpan.FromMilliseconds(s.DelayMs), time, ct);
+            var max = preset.MaxRunTime(s.Params);
+            // The step's own token is cancelled at its timeout, so a hung step stops instead of running on in the background
+            using var timeout = new CancellationTokenSource(max, time);
+            using var stepCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
             try
             {
                 if (preset.CheckReady(s.Params) is { } reason) throw new PresetException(label + reason);
-                await preset.RunAsync(s.Params, ct).WaitAsync(preset.MaxRunTime(s.Params), time, ct);
+                await preset.RunAsync(s.Params, stepCts.Token).WaitAsync(max, time, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (OperationCanceledException) { throw new PresetException(label + "Tempo esgotado"); }
             catch (PresetException e) when (e.Message.StartsWith(label, StringComparison.Ordinal)) { throw; }
             catch (TimeoutException) { throw new PresetException(label + "Tempo esgotado"); }
             catch (PresetException e) { throw new PresetException(label + e.Message); }

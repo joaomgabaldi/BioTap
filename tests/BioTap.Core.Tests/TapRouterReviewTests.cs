@@ -108,9 +108,11 @@ public class TapRouterReviewTests
         var p = new FakePreset("fake") { Gate = new TaskCompletionSource(), MaxRun = TimeSpan.FromSeconds(120) };
         Router([p], time, A(1)).OnTaps(1);
         await WaitUntil(() => p.Runs == 1);
-        for (var i = 0; i < 61; i++) { time.Advance(TimeSpan.FromSeconds(1)); await Task.Delay(2); }
+        time.Advance(TimeSpan.FromSeconds(61));
+        await Task.Delay(100); // timers fire synchronously on Advance; this only lets a wrong 60 s timeout surface
         Assert.DoesNotContain(outcomes, o => o.Kind == OutcomeKind.Failed);
-        for (var i = 0; i < 70 && !outcomes.Any(o => o.Kind == OutcomeKind.Failed); i++) { time.Advance(TimeSpan.FromSeconds(1)); await Task.Delay(5); }
+        time.Advance(TimeSpan.FromSeconds(60));
+        await WaitUntil(() => outcomes.Any(o => o.Kind == OutcomeKind.Failed));
         Assert.Equal("Tempo esgotado", outcomes.Single(o => o.Kind == OutcomeKind.Failed).Detail);
     }
 

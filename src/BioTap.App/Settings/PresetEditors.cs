@@ -97,13 +97,14 @@ static class PresetEditors
         void Render()
         {
             list.Children.Clear();
+            add.IsEnabled = rows.Count < SequencePreset.MaxSteps;
             for (var i = 0; i < rows.Count; i++)
             {
                 var row = rows[i];
                 var at = i;
                 var delay = new NumberBox { Header = "Esperar antes (s)", Minimum = 0, Maximum = 10, Value = row.DelayMs / 1000.0, SmallChange = 0.5, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 160 };
                 delay.ValueChanged += (_, _) => Ui.Run(() => { if (!double.IsNaN(delay.Value)) row.DelayMs = (int)Math.Round(delay.Value * 1000); }, "sequence delay");
-                var edit = new Button { Content = "Editar" };
+                var edit = new Button { Content = "Editar", IsEnabled = row.Preset != "sequence" }; // a hand-edited nested sequence can only be deleted
                 edit.Click += (_, _) => Ui.Run(() => Edit(row), "sequence step edit");
                 var up = new Button { Content = "↑", IsEnabled = i > 0 };
                 up.Click += (_, _) => Ui.Run(() => { (rows[at - 1], rows[at]) = (rows[at], rows[at - 1]); Render(); }, "sequence step up");
