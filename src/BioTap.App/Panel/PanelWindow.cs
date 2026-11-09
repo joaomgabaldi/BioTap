@@ -1,60 +1,44 @@
-using BioTap.App.Overlay;
 using BioTap.App.Shell;
 using BioTap.Core;
-using Microsoft.UI;
-using Microsoft.UI.Composition.SystemBackdrops;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.Graphics;
 using Windows.System;
-using Windows.Win32;
-using Windows.Win32.Foundation;
 
 namespace BioTap.App.Panel;
 
 /// <summary>
-/// The action panel (spec §4, approved mockup): a row of 56 px squares with the tap count below, a separator and a
-/// small gear; centered above the taskbar; closes on Esc or when it loses focus.
+/// The action panel (approved mockup docs/mockups/painel.html): one glass surface with a row of actions (icon,
+/// tap count below), a divider and a smaller gear; centered 8 px above the taskbar. Clicking an action runs it;
+/// the gear opens the preferences. Closes on Esc or when it loses focus.
 /// </summary>
 sealed class PanelWindow
 {
-    const int Square = 56, Gap = 8, Pad = 12, CountHeight = 18, GearWidth = 36;
-    readonly Window window;
-    readonly StackPanel row = new() { Orientation = Orientation.Horizontal, Spacing = Gap, VerticalAlignment = VerticalAlignment.Top };
-    readonly HWND hwnd;
-    bool visible;
+    readonly GlassWindow glass;
+    readonly Grid root;
+    readonly StackPanel row = new() { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
+    long lastHideTick;
 
     public event Action<Guid>? ItemClicked;
     public event Action? GearClicked;
 
+    /// <summary>Where the panel is while shown (the confirmation goes above it).</summary>
+    public RectInt32? Bounds => glass.Bounds;
+
     public PanelWindow()
     {
-        var root = new Grid { Padding = new Thickness(Pad), Children = { row } };
+        root = new Grid { Padding = new Thickness(9), Children = { row } };
         root.KeyDown += (_, e) => Ui.Run(() => { if (e.Key == VirtualKey.Escape) Hide(); }, "panel key");
-        window = new Window { SystemBackdrop = new BioTap.App.Shell.ActiveAcrylicBackdrop(), Content = root };
-        if (window.AppWindow.Presenter is OverlappedPresenter p)
-        {
-            p.SetBorderAndTitleBar(true, false);
-            p.IsResizable = false;
-            p.IsMaximizable = false;
-            p.IsMinimizable = false;
-            p.IsAlwaysOnTop = true;
-        }
-        window.AppWindow.IsShownInSwitchers = false;
-        window.Activated += (_, e) => Ui.Run(() => { if (e.WindowActivationState == WindowActivationState.Deactivated) Hide(); }, "panel activated");
-        hwnd = new HWND(WinRT.Interop.WindowNative.GetWindowHandle(window));
+        glass = new GlassWindow(root);
+        glass.Window.Activated += (_, e) => Ui.Run(() => { if (e.WindowActivationState == WindowActivationState.Deactivated) Hide(); }, "panel activated");
     }
-
-    long lastHideTick;
 
     public void Toggle(IReadOnlyList<PanelItem> items)
     {
         // Clicking the tray icon first deactivates (and so hides) the panel; that same click must not reopen it
-        if (visible || Environment.TickCount64 - lastHideTick < 300) Hide();
+        if (glass.IsShown || Environment.TickCount64 - lastHideTick < 300) Hide();
         else Show(items);
     }
 
@@ -62,54 +46,59 @@ sealed class PanelWindow
     {
         row.Children.Clear();
         if (items.Count == 0)
-            row.Children.Add(new TextBlock { Text = PanelModel.EmptyText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 18, 8, 0), Opacity = 0.8 });
+            row.Children.Add(new TextBlock { Text = PanelModel.EmptyText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0), Foreground = Theme.Res("BioTapTextMutedBrush") });
         foreach (var item in items) row.Children.Add(Tile(item));
-        row.Children.Add(new Rectangle { Width = 1, Fill = Theme.Brush("DividerStrokeColorDefaultBrush", Theme.Divider), Margin = new Thickness(2, 4, 2, 4) });
+        row.Children.Add(new Rectangle { Width = 1, Height = 35, Fill = Theme.Res("BioTapDividerBrush"), Margin = new Thickness(5, 0, 5, 0) });
         var gear = new Button
         {
-            Content = new FontIcon { Glyph = "", FontSize = 16 },
-            Background = new SolidColorBrush(Colors.Transparent),
-            BorderThickness = new Thickness(0),
-            Width = GearWidth,
-            Height = Square,
-            Opacity = 0.7,
+            Style = Theme.Style("BioTapGhostButtonStyle"),
+            Content = new FontIcon { Glyph = "", FontSize = 18 },
+            Width = 36,
+            Height = 44,
+            CornerRadius = new CornerRadius(7),
         };
         ToolTipService.SetToolTip(gear, "Preferências");
+        AutomationProperties.SetName(gear, "Preferências");
         gear.Click += (_, _) => Ui.Run(() => { Hide(); GearClicked?.Invoke(); }, "panel gear");
         row.Children.Add(gear);
 
-        var content = items.Count == 0 ? 190 : items.Count * Square + (items.Count - 1) * Gap;
-        Placement.AboveTaskbar(window.AppWindow, hwnd, scale =>
-            ((int)((Pad * 2 + content + Gap + 5 + Gap + GearWidth) * scale), (int)((Pad * 2 + Square + 6 + CountHeight) * scale)));
-        window.Activate(); // takes focus so Esc and click-outside close it
-        // From a second BioTap.exe the foreground lock can refuse Activate; without focus the panel could not close
-        PInvoke.SetForegroundWindow(hwnd);
-        visible = true;
+        var area = Placement.UnderCursor();
+        var scale = glass.ScaleOn(area);
+        root.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var client = new SizeInt32((int)Math.Ceiling(root.DesiredSize.Width * scale), (int)Math.Ceiling(root.DesiredSize.Height * scale));
+        root.IsHitTestVisible = true;
+        glass.Show(Placement.AboveTaskbar(area, glass.OuterSizeFor(client)), scale, activate: true); // focus, so Esc and click-outside close it
     }
 
     FrameworkElement Tile(PanelItem item)
     {
+        var label = $"{item.Name} · {Theme.Taps(item.Taps)}";
         var button = new Button
         {
-            Width = Square,
-            Height = Square,
-            Padding = new Thickness(0),
-            Content = Icons.Element(item.Icon, 28),
+            Style = Theme.Style("BioTapPanelTileStyle"),
+            Content = new StackPanel
+            {
+                Spacing = 11,
+                Children =
+                {
+                    Icons.Element(item.Icon, 27),
+                    new TextBlock { Text = item.Taps.ToString(), FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center },
+                },
+            },
         };
-        ToolTipService.SetToolTip(button, item.Name);
-        button.Click += (_, _) => Ui.Run(() => { Hide(); ItemClicked?.Invoke(item.Id); }, "panel item");
-        return new StackPanel
-        {
-            Spacing = 6,
-            Children = { button, new TextBlock { Text = item.Taps.ToString(), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 12, Opacity = 0.75 } },
-        };
+        ToolTipService.SetToolTip(button, label);
+        AutomationProperties.SetName(button, label);
+        // Runs once the panel is gone, so window presets act on the window that was in front (as a tap would)
+        button.Click += (_, _) => Ui.Run(() => Hide(() => ItemClicked?.Invoke(item.Id)), "panel item");
+        return button;
     }
 
-    public void Hide()
+    /// <param name="done">Called after the exit (not if the panel is reopened meanwhile).</param>
+    public void Hide(Action? done = null)
     {
-        if (!visible) return;
-        visible = false;
+        if (!glass.IsShown) return;
         lastHideTick = Environment.TickCount64;
-        window.AppWindow.Hide();
+        root.IsHitTestVisible = false; // no second click while it leaves
+        glass.Hide(done is null ? null : () => Ui.Run(done, "panel hidden"));
     }
 }

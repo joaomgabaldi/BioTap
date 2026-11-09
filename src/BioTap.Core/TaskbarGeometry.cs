@@ -24,4 +24,15 @@ public static class TaskbarGeometry
         y = Math.Clamp(y, work.Y, Math.Max(work.Y, work.Bottom - height));
         return (x, y);
     }
+
+    /// <summary>Centered <c>gap</c> px above <paramref name="anchor"/> (the open panel); below it when the top has no room.</summary>
+    public static (int X, int Y) PlaceAbove(ScreenRect work, ScreenRect anchor, int width, int height, int gap = 8)
+    {
+        var x = anchor.X + (anchor.Width - width) / 2;
+        var y = anchor.Y - gap - height;
+        if (y < work.Y) y = anchor.Bottom + gap;
+        x = Math.Clamp(x, work.X, Math.Max(work.X, work.Right - width));
+        y = Math.Clamp(y, work.Y, Math.Max(work.Y, work.Bottom - height));
+        return (x, y);
+    }
 }

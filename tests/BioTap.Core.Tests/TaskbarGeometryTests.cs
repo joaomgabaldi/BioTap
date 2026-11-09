@@ -30,4 +30,18 @@ public class TaskbarGeometryTests
         var (x, _) = TaskbarGeometry.Place(new(0, 0, 800, 600), new(0, 0, 800, 648), 1000, 100);
         Assert.Equal(0, x);
     }
+
+    // The confirmation goes above the open panel, centered on it, without covering it
+
+    [Fact]
+    public void Above_CenteredOverTheAnchorWithTheGap()
+        => Assert.Equal((900 + (120 - 80) / 2, 900 - 8 - 50), TaskbarGeometry.PlaceAbove(new(0, 0, 1920, 1032), new(900, 900, 120, 90), 80, 50));
+
+    [Fact]
+    public void Above_NoRoomOnTop_GoesBelowTheAnchor()
+        => Assert.Equal((900 + 20, 48 + 90 + 8), TaskbarGeometry.PlaceAbove(new(0, 48, 1920, 1032), new(900, 48, 120, 90), 80, 50));
+
+    [Fact]
+    public void Above_ClampedInsideTheWorkArea()
+        => Assert.Equal((1920 - 300, 900 - 8 - 50), TaskbarGeometry.PlaceAbove(new(0, 0, 1920, 1032), new(1850, 900, 60, 90), 300, 50));
 }

@@ -42,6 +42,8 @@ sealed class AppHost(DispatcherQueue ui)
     public ServiceConnection Connection => connection;
     public TapRouter Router => router;
     public string StatusText => PanelModel.TrayTooltip(connectionState, sensorState);
+    public bool SensorReady => connectionState == ConnectionState.Connected && sensorState == SensorState.Ok;
+    public bool StatusProblem => PanelModel.IsProblem(connectionState, sensorState);
 
     public void Start()
     {
@@ -78,7 +80,7 @@ sealed class AppHost(DispatcherQueue ui)
         router.Outcome += o => ui.TryEnqueue(() => Shell.Ui.Run(() =>
         {
             var c = loaded.Config;
-            if (c.Overlay.Enabled) overlay.Show(o, TimeSpan.FromMilliseconds(c.Overlay.DurationMs));
+            if (c.Overlay.Enabled) overlay.Show(o, TimeSpan.FromMilliseconds(c.Overlay.DurationMs), panel.Bounds);
         }, "overlay"));
 
         connection = new ServiceConnection(() => new PipeClient(PipeServerName, ServiceExe), TimeProvider.System);
