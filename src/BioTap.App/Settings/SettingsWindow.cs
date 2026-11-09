@@ -61,7 +61,7 @@ sealed class SettingsWindow
 
     readonly TaskCompletionSource loaded = new();
 
-    public async void Show(Guid? actionId)
+    public async void Show()
     {
         try
         {
@@ -71,9 +71,6 @@ sealed class SettingsWindow
             if (nav.SelectedItem is null) nav.SelectedItem = nav.MenuItems[0];
             if (dialogOpen) return; // an editor is already open: just bring the window up
             saved = host.Loaded.Config; // pick up a config reloaded since this window was built
-            if (actionId is not { } id) return;
-            nav.SelectedItem = nav.MenuItems[0];
-            if (saved.Actions.FirstOrDefault(a => a.Id == id) is { } action) await EditAsync(action, isNew: false);
         }
         catch (Exception e)
         {

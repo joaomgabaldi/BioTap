@@ -65,12 +65,13 @@ sealed class AppHost(DispatcherQueue ui)
 
         overlay = new OverlayWindow();
         panel = new PanelWindow();
-        panel.ItemClicked += id => OpenSettings(id);
-        panel.GearClicked += () => OpenSettings(null);
+        // Mesmo caminho de um toque; o painel já se escondeu, então presets de janela agem na janela que estava na frente
+        panel.ItemClicked += id => { if (loaded.Config.Actions.FirstOrDefault(a => a.Id == id) is { } a) router.Test(a); };
+        panel.GearClicked += OpenSettings;
 
         tray = new TrayIcon();
         tray.Clicked += TogglePanel;
-        tray.SettingsRequested += () => OpenSettings(null);
+        tray.SettingsRequested += OpenSettings;
         tray.ExitRequested += Exit;
 
         router = new TapRouter(() => loaded.Config, presets);
@@ -104,8 +105,8 @@ sealed class AppHost(DispatcherQueue ui)
         foreach (var e in loaded.Errors) Program.Log.Write("WARN", "Config: " + e);
     }
 
-    /// <summary>One preferences window; reopened after it is closed. <paramref name="actionId"/> opens that action's editor.</summary>
-    void OpenSettings(Guid? actionId)
+    /// <summary>One preferences window; reopened after it is closed.</summary>
+    void OpenSettings()
     {
         try
         {
@@ -114,7 +115,7 @@ sealed class AppHost(DispatcherQueue ui)
                 settings = new Settings.SettingsWindow(this);
                 settings.Closed += () => settings = null;
             }
-            settings.Show(actionId);
+            settings.Show();
         }
         catch (Exception e)
         {
