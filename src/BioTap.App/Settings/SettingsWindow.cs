@@ -134,9 +134,8 @@ sealed class SettingsWindow
         window.AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(1040 * scale), (int)(720 * scale)));
         if (window.AppWindow.Presenter is OverlappedPresenter p)
         {
-            // Below this the sidebar and the action cards no longer fit side by side
-            p.PreferredMinimumWidth = (int)(760 * scale);
-            p.PreferredMinimumHeight = (int)(500 * scale);
+            p.IsResizable = false; // fixed size
+            p.IsMaximizable = false;
         }
         window.Closed += (_, _) => Ui.Run(() => Closed?.Invoke(), "settings closed");
         // NavigationView refuses SelectedItem before it is loaded (COMException 0x80070490): select once it is
@@ -194,7 +193,7 @@ sealed class SettingsWindow
         host.Reload();
         saved = host.Loaded.Config;
         if (outcome.Message is { } warning) Banner(InfoBarSeverity.Warning, "Salvo com aviso", warning);
-        else Banner(InfoBarSeverity.Success, "Salvo", null);
+        else banner.IsOpen = false; // success is shown where the user acted (the list redraws; Salvar says "Salvo")
         return true;
     }
 
@@ -277,18 +276,25 @@ sealed class SettingsWindow
         return row;
     }
 
-    static UIElement SaveBar(Button save, string note)
-    {
-        var bar = new StackPanel
-        {
-            Orientation = Orientation.Horizontal, Spacing = 14,
-            Children = { save, new TextBlock { Text = note, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, Foreground = Theme.Res("BioTapTextMutedBrush") } },
-        };
-        return bar;
-    }
-
     // Always enabled: a NumberBox commits typed text only when it loses focus, which the click on Salvar causes
-    static Button SaveButton() => new() { Content = "Salvar", Style = Theme.Style("AccentButtonStyle"), MinWidth = 96 };
+    static Button SaveButton() => new() { Content = "Salvar", Style = Theme.Style("AccentButtonStyle"), MinWidth = 104 };
+
+    /// <summary>Saves through <paramref name="save"/>; on success the button reads "✓ Salvo" for 2 s.</summary>
+    async Task SaveFromButton(Button save, AppConfig next)
+    {
+        save.IsEnabled = false;
+        try
+        {
+            if (!await SaveAsync(next)) return;
+            save.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { new FontIcon { Glyph = "", FontSize = 12 }, new TextBlock { Text = "Salvo" } } };
+            var back = window.DispatcherQueue.CreateTimer();
+            back.Interval = TimeSpan.FromSeconds(2);
+            back.IsRepeating = false;
+            back.Tick += (_, _) => Ui.Run(() => save.Content = "Salvar", "save label");
+            back.Start();
+        }
+        finally { save.IsEnabled = true; }
+    }
 
     // ---------- Ações ----------
 
@@ -464,7 +470,11 @@ sealed class SettingsWindow
             Header = "Toques", Description = "Quantos toques seguidos no leitor executam esta ação.",
             Minimum = 1, Maximum = Protocol.MaxTaps, Value = action.Taps, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, SmallChange = 1,
         };
-        var name = new TextBox { Header = "Nome (aparece no painel)", Text = action.Name, MaxLength = 80 };
+        var name = new TextBox
+        {
+            Header = "Nome da ação", Text = action.Name, MaxLength = 80,
+            Description = "Identifica a ação nas preferências e aparece na confirmação e na dica do painel.",
+        };
         var icon = new ComboBox { Header = "Ícone", MinWidth = 220 };
         // Only "Abrir" can show the program's own icon; it is the default for new actions
         var hasProgramIcon = action.Preset == "openTarget";
@@ -614,13 +624,13 @@ sealed class SettingsWindow
             }
         }, "startup toggle");
 
-        var timeout = new NumberBox { Minimum = TapCounter.MinTimeoutMs, Maximum = TapCounter.MaxTimeoutMs, Value = saved.TapTimeoutMs, SmallChange = 50, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 140 };
+        var timeout = new NumberBox { Minimum = TapCounter.MinTimeoutMs, Maximum = TapCounter.MaxTimeoutMs, Value = saved.TapTimeoutMs, SmallChange = 50, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 180 };
         var timeoutRow = SettingRow("Intervalo entre toques",
             $"Depois do último toque, o BioTap espera este tempo sem novos toques para concluir a contagem e executar a ação. Em milissegundos ({TapCounter.MinTimeoutMs} a {TapCounter.MaxTimeoutMs}).",
             timeout, out _);
         var save = SaveButton();
         int Read() => double.IsNaN(timeout.Value) ? saved.TapTimeoutMs : (int)Math.Round(timeout.Value);
-        save.Click += (_, _) => Ui.RunAsync(() => SaveAsync(saved with { TapTimeoutMs = Read() }), "save general");
+        save.Click += (_, _) => Ui.RunAsync(() => SaveFromButton(save, saved with { TapTimeoutMs = Read() }), "save general");
 
         return new StackPanel
         {
@@ -631,7 +641,7 @@ sealed class SettingsWindow
                 Group(startRow),
                 SectionLabel("DETECÇÃO DE TOQUES"),
                 Group(timeoutRow),
-                SaveBar(save, "“Iniciar com o Windows” é aplicado na hora."),
+                save,
             },
         };
     }
@@ -670,10 +680,10 @@ sealed class SettingsWindow
         AutomationProperties.SetName(preview, $"Prévia da confirmação: {outcome.Title}");
 
         var show = new ToggleSwitch { IsOn = saved.Overlay.Enabled, OnContent = null, OffContent = null, MinWidth = 0, Width = 44 };
-        var duration = new NumberBox { Minimum = OverlayConfig.MinDurationMs, Maximum = OverlayConfig.MaxDurationMs, Value = saved.Overlay.DurationMs, SmallChange = 250, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 140 };
+        var duration = new NumberBox { Minimum = OverlayConfig.MinDurationMs, Maximum = OverlayConfig.MaxDurationMs, Value = saved.Overlay.DurationMs, SmallChange = 250, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 180 };
         var save = SaveButton();
         OverlayConfig Read() => new(show.IsOn, double.IsNaN(duration.Value) ? saved.Overlay.DurationMs : (int)Math.Round(duration.Value));
-        save.Click += (_, _) => Ui.RunAsync(() => SaveAsync(saved with { Overlay = Read() }), "save appearance");
+        save.Click += (_, _) => Ui.RunAsync(() => SaveFromButton(save, saved with { Overlay = Read() }), "save appearance");
 
         return new StackPanel
         {
@@ -685,7 +695,7 @@ sealed class SettingsWindow
                 Group(
                     SettingRow("Mostrar confirmação de execução", "Mostra o ícone e o nome da ação quando ela é disparada.", show, out _),
                     SettingRow("Tempo na tela", $"Duração da confirmação, em milissegundos ({OverlayConfig.MinDurationMs} a {OverlayConfig.MaxDurationMs}).", duration, out _)),
-                SaveBar(save, "As alterações desta página valem depois de salvar."),
+                save,
             },
         };
     }

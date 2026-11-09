@@ -143,7 +143,7 @@ static class PresetEditors
         // A new action has no params yet: show the defaults; Read writes them all
         var target = new RadioButtons { Header = "O que capturar", Items = { "Tela", "Janela atual" }, SelectedIndex = S("target") == "window" ? 1 : 0 };
         var save = new CheckBox { Content = "Salvar em uma pasta", IsChecked = B("save", true) };
-        var folder = new TextBox { Header = "Pasta", Text = S("folder") is { Length: > 0 } f ? f : ScreenshotPreset.DefaultFolder, MinWidth = 320 };
+        var folder = new TextBox { Header = "Pasta", Text = S("folder") is { Length: > 0 } f ? f : ScreenshotPreset.DefaultFolder };
         var browse = new Button { Content = "Procurar…" };
         browse.Click += (_, _) => Ui.RunAsync(async () =>
         {
@@ -162,8 +162,7 @@ static class PresetEditors
         save.Unchecked += (_, _) => Ui.Run(Sync, "screenshot save toggle");
         Sync();
         var copy = new CheckBox { Content = "Copiar para a área de transferência", IsChecked = B("copy", true) };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Bottom, Children = { folder, browse } };
-        return (new StackPanel { Spacing = 12, Children = { target, save, row, copy } }, () => new JsonObject
+        return (new StackPanel { Spacing = 12, Children = { target, save, PathRow(folder, browse), copy } }, () => new JsonObject
         {
             ["target"] = target.SelectedIndex == 1 ? "window" : "screen", ["save"] = save.IsChecked == true,
             ["folder"] = folder.Text.Trim(), ["copy"] = copy.IsChecked == true,
@@ -201,12 +200,23 @@ static class PresetEditors
             }
         }, "file picker");
         var args = new TextBox { Header = "Argumentos (opcional)", Text = S("args") };
-        return (new StackPanel { Spacing = 12, Children = { new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { target, browse } }, args } }, () =>
+        return (new StackPanel { Spacing = 12, Children = { PathRow(target, browse), args } }, () =>
         {
             var o = new JsonObject { ["target"] = target.Text.Trim() };
             if (!string.IsNullOrWhiteSpace(args.Text)) o["args"] = args.Text;
             return o;
         });
+    }
+
+    /// <summary>A path field that takes the free width, with its "Procurar…" button at the right, aligned with the field.</summary>
+    static Grid PathRow(TextBox field, Button browse)
+    {
+        browse.VerticalAlignment = VerticalAlignment.Bottom;
+        var row = new Grid { ColumnSpacing = 8, Children = { field, browse } };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(browse, 1);
+        return row;
     }
 
     static (UIElement, Func<JsonObject>) Shortcut(Func<string, string> S, Func<string, bool, bool> B)

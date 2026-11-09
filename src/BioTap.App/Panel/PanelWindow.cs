@@ -65,9 +65,8 @@ sealed class PanelWindow
         var area = Placement.UnderCursor();
         var scale = glass.ScaleOn(area);
         root.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-        var client = new SizeInt32((int)Math.Ceiling(root.DesiredSize.Width * scale), (int)Math.Ceiling(root.DesiredSize.Height * scale));
         root.IsHitTestVisible = true;
-        glass.Show(Placement.AboveTaskbar(area, glass.OuterSizeFor(client)), scale, activate: true); // focus, so Esc and click-outside close it
+        glass.Show(Placement.AboveTaskbar(area, GlassWindow.SizeFor(root.DesiredSize, scale)), scale, activate: true); // focus, so Esc and click-outside close it
     }
 
     FrameworkElement Tile(PanelItem item)

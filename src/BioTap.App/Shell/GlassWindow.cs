@@ -18,6 +18,8 @@ namespace BioTap.App.Shell;
 /// subtle border, and the shared motion (rise 7 px + fade in, sink 7 px + fade out) driven frame by frame on the
 /// UI thread. The fade is the layered-window alpha, which ends at 255: the acrylic keeps its own 75% tint and the
 /// content stays fully opaque. The window is hidden only after the exit finishes.
+/// Callers place the visible surface (the client area, where the XAML draws); the window around it also has the
+/// invisible resize borders of the bordered presenter, which are added here from the window's real frame.
 /// </summary>
 sealed class GlassWindow
 {
@@ -25,10 +27,13 @@ sealed class GlassWindow
 
     readonly Reveal reveal = new();
     readonly Stopwatch clock = Stopwatch.StartNew();
-    RectInt32 target;
+    RectInt32 target; // the visible surface
+    (int Left, int Top, int Right, int Bottom) frame; // invisible borders around it
     double offset;
     RectInt32 applied;
     Action? hidden;
+    bool wanted; // shown or on its way in
+    int entry; // cancels an entrance still waiting for its first drawn frame
     bool ticking;
     readonly Microsoft.UI.Dispatching.DispatcherQueueTimer safety;
 
@@ -37,10 +42,10 @@ sealed class GlassWindow
     public AppWindow AppWindow => Window.AppWindow;
 
     /// <summary>Shown or entering (not leaving).</summary>
-    public bool IsShown => reveal.Shown;
+    public bool IsShown => wanted;
 
-    /// <summary>Final on-screen bounds while shown or entering.</summary>
-    public RectInt32? Bounds => reveal.Shown ? target : null;
+    /// <summary>Final bounds of the visible surface while shown or entering.</summary>
+    public RectInt32? Bounds => wanted ? target : null;
 
     public GlassWindow(UIElement content, WINDOW_EX_STYLE extraStyles = 0)
     {
@@ -86,12 +91,15 @@ sealed class GlassWindow
         return PInvoke.GetDpiForWindow(Hwnd) / 96.0;
     }
 
-    /// <summary>Outer size for a client area of <paramref name="client"/> physical pixels.</summary>
-    public SizeInt32 OuterSizeFor(SizeInt32 client)
-    {
-        AppWindow.ResizeClient(client);
-        return AppWindow.Size;
-    }
+    /// <summary>Surface size for content measured at <paramref name="dips"/> on a display at <paramref name="scale"/>.</summary>
+    public static SizeInt32 SizeFor(Windows.Foundation.Size dips, double scale)
+        => new((int)Math.Ceiling(dips.Width * scale), (int)Math.Ceiling(dips.Height * scale));
+
+    /// <summary>On screen: shown, entering or leaving.</summary>
+    public bool IsOnScreen => AppWindow.IsVisible;
+
+    /// <summary>Size of the current surface (meaningful while on screen).</summary>
+    public SizeInt32 Size => new(target.Width, target.Height);
 
     /// <summary>
     /// Enters at <paramref name="bounds"/>, or moves there if already shown (no new entrance), or turns back from a
@@ -99,28 +107,42 @@ sealed class GlassWindow
     /// </summary>
     public void Show(RectInt32 bounds, double scale, bool activate)
     {
+        frame = MeasureFrame();
         // A pending exit is cancelled; whatever was waiting for it (an action clicked in the panel) still runs
         var pending = hidden;
         hidden = null;
         pending?.Invoke();
         target = bounds;
         offset = Theme.MotionOffset * scale;
-        var wasVisible = AppWindow.IsVisible;
+        wanted = true;
+        var token = ++entry;
+        if (AppWindow.IsVisible) Enter();
+        else
+        {
+            // A hidden window does not lay out: shown as is, its first frame would still have the old content and
+            // size. So it appears fully transparent and the entrance starts once XAML has drawn the new layout.
+            reveal.Jump(false);
+            Apply();
+            if (activate) Window.Activate();
+            else AppWindow.Show(activateWindow: false);
+            Ui.AfterFrames(2, () => { if (token == entry && wanted) Enter(); });
+        }
+        if (activate) PInvoke.SetForegroundWindow(Hwnd); // from a second BioTap.exe the foreground lock can refuse Activate
+    }
+
+    void Enter()
+    {
         if (SystemUi.AnimationsEnabled) reveal.Start(true, clock.ElapsedMilliseconds, (int)Theme.EnterDuration.TotalMilliseconds, (int)Theme.ExitDuration.TotalMilliseconds);
         else reveal.Jump(true);
         Apply();
-        if (!wasVisible)
-        {
-            if (activate) Window.Activate();
-            else AppWindow.Show(activateWindow: false);
-        }
-        if (activate) PInvoke.SetForegroundWindow(Hwnd); // from a second BioTap.exe the foreground lock can refuse Activate
         Run();
     }
 
     /// <summary>Leaves, then hides the window and calls <paramref name="done"/> (not called if shown again meanwhile).</summary>
     public void Hide(Action? done = null)
     {
+        wanted = false;
+        entry++;
         if (!AppWindow.IsVisible) { reveal.Jump(false); done?.Invoke(); return; }
         hidden = done;
         if (SystemUi.AnimationsEnabled) reveal.Start(false, clock.ElapsedMilliseconds, (int)Theme.EnterDuration.TotalMilliseconds, (int)Theme.ExitDuration.TotalMilliseconds);
@@ -163,17 +185,33 @@ sealed class GlassWindow
 
     void Finish()
     {
-        if (reveal.Shown) return;
+        if (wanted) return;
         AppWindow.Hide();
         var done = hidden;
         hidden = null;
         done?.Invoke();
     }
 
+    /// <summary>
+    /// The invisible borders, measured on the window as it is (they depend on the style and the DPI). Not
+    /// AppWindow.ResizeClient: it sizes as if the hidden caption were there, which left ~31 px of empty glass.
+    /// </summary>
+    (int, int, int, int) MeasureFrame()
+    {
+        var origin = new System.Drawing.Point(0, 0);
+        PInvoke.ClientToScreen(Hwnd, ref origin);
+        var position = AppWindow.Position;
+        var size = AppWindow.Size;
+        var client = AppWindow.ClientSize;
+        int left = origin.X - position.X, top = origin.Y - position.Y;
+        return (left, top, size.Width - client.Width - left, size.Height - client.Height - top);
+    }
+
     void Apply()
     {
         var v = reveal.Value;
-        var rect = target with { Y = target.Y + (int)Math.Round((1 - v) * offset) };
+        var rect = new RectInt32(target.X - frame.Left, target.Y - frame.Top + (int)Math.Round((1 - v) * offset),
+            target.Width + frame.Left + frame.Right, target.Height + frame.Top + frame.Bottom);
         if (rect.Width != applied.Width || rect.Height != applied.Height) AppWindow.MoveAndResize(rect);
         else if (rect.X != applied.X || rect.Y != applied.Y) AppWindow.Move(new PointInt32(rect.X, rect.Y));
         applied = rect;

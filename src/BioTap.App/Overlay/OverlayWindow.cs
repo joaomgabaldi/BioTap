@@ -36,24 +36,45 @@ sealed class OverlayWindow
     }
 
     /// <summary>
-    /// Shows <paramref name="o"/>, or updates the pill already on screen (no new entrance) and restarts its time.
-    /// <paramref name="panel"/> is the open panel's bounds, to stay above it. Call on the UI thread.
+    /// Shows <paramref name="o"/>, or updates the pill already on screen (no new entrance; a running exit turns
+    /// back) and restarts its time. <paramref name="panel"/> is the open panel's bounds, to stay above it. Call on
+    /// the UI thread.
     /// </summary>
     public void Show(ActionOutcome o, TimeSpan duration, RectInt32? panel)
     {
         var content = Content(o);
-        host.Child = content;
+        // Pinned to the top-left: in the one frame where the window already has its new size but XAML still draws the
+        // previous layout, the content stays where it belongs instead of shifting by half the change (centered text got cut)
+        content.HorizontalAlignment = HorizontalAlignment.Left;
+        content.VerticalAlignment = VerticalAlignment.Top;
         var area = panel is { } p ? DisplayArea.GetFromRect(p, DisplayAreaFallback.Primary) : Placement.UnderCursor();
         var scale = glass.ScaleOn(area);
         content.Measure(new Windows.Foundation.Size(MaxWidth, double.PositiveInfinity));
-        var client = new SizeInt32((int)Math.Ceiling(content.DesiredSize.Width * scale), (int)Math.Ceiling(content.DesiredSize.Height * scale));
-        var size = glass.OuterSizeFor(client);
-        glass.Show(panel is { } anchor ? Placement.Above(area, anchor, size) : Placement.AboveTaskbar(area, size), scale, activate: false);
+        var size = GlassWindow.SizeFor(content.DesiredSize, scale);
+        RectInt32 Place(SizeInt32 s) => panel is { } anchor ? Placement.Above(area, anchor, s) : Placement.AboveTaskbar(area, s);
+
+        var token = ++swap;
+        if (glass.IsOnScreen)
+        {
+            // The window resizes at once but the new text only appears with the next XAML frame. So: first a size that
+            // fits both texts, then the swap, then the final size once the new text has been drawn.
+            var both = new SizeInt32(Math.Max(size.Width, glass.Size.Width), Math.Max(size.Height, glass.Size.Height));
+            glass.Show(Place(both), scale, activate: false);
+            host.Child = content;
+            Ui.AfterFrames(2, () => { if (token == swap && glass.IsShown) glass.Show(Place(size), scale, activate: false); });
+        }
+        else
+        {
+            host.Child = content;
+            glass.Show(Place(size), scale, activate: false);
+        }
 
         hideTimer.Stop();
         hideTimer.Interval = duration;
         hideTimer.Start();
     }
+
+    int swap;
 
     /// <summary>
     /// The pill's content: icon and name; errors keep their glyph and add the safe detail line. Also drawn as the
