@@ -202,10 +202,10 @@ sealed class SettingsWindow
         foreach (var (glyph, label) in IconChoices)
             icon.Items.Add(new ComboBoxItem { Tag = glyph, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = Glyphs.For(new(OutcomeKind.Ran, "", null, new IconRef("glyph", glyph))) }, new TextBlock { Text = label } } } });
         // A glyph outside the list (set in config.json) stays as it is unless the user picks another
-        if (action.Icon.Kind != "exe" && !IconChoices.Any(c => c.Glyph == action.Icon.Value))
-            icon.Items.Add(new ComboBoxItem { Tag = action.Icon.Value, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = action.Icon.GlyphText() }, new TextBlock { Text = "Atual" } } } });
+        if (action.Icon.Kind == "exe" ? !hasProgramIcon : !IconChoices.Any(c => c.Glyph == action.Icon.Value))
+            icon.Items.Add(new ComboBoxItem { Tag = action.Icon.Kind == "exe" ? "exe" : action.Icon.Value, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { Icons.Element(action.Icon, 16), new TextBlock { Text = "Atual" } } } });
         var wantProgramIcon = hasProgramIcon && (isNew || action.Icon.Kind == "exe");
-        var selectedTag = wantProgramIcon ? "exe" : action.Icon.Value;
+        var selectedTag = wantProgramIcon || action.Icon.Kind == "exe" ? "exe" : action.Icon.Value;
         icon.SelectedItem = icon.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == selectedTag) ?? icon.Items[0];
         var error = new InfoBar { Severity = InfoBarSeverity.Error, IsClosable = false };
         ContentDialog? dialogRef = null;
@@ -269,11 +269,13 @@ sealed class SettingsWindow
 
         if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
         var edited = Edited();
-        if (edited.Icon.Kind == "exe")
+        if (edited.Icon.Kind == "exe" && hasProgramIcon)
         {
             var target = edited.Params["target"] is JsonValue v && v.TryGetValue<string>(out var t) ? t : "";
             var png = await Task.Run(() => new IconExtractor().ExtractPng(target, 48)); // reads the disk
-            edited = edited with { Icon = IconCache.Store(Program.DataFolder, edited.Id, png, host.Presets.Get(edited.Preset)?.DefaultIcon ?? new IconRef("glyph", "E8E5")) };
+            // An action that already has a cached icon keeps it when the program can't be read now
+            if (png is not null || action.Icon.Kind != "exe")
+                edited = edited with { Icon = IconCache.Store(Program.DataFolder, edited.Id, png, host.Presets.Get(edited.Preset)?.DefaultIcon ?? new IconRef("glyph", "E8E5")) };
         }
         if (!await SaveAsync(ActionEditor.WithAction(saved, edited))) return;
         if (edited.Icon.Kind != "exe") IconCache.Remove(Program.DataFolder, edited.Id); // glyph now, or no icon could be read

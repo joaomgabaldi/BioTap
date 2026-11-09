@@ -14,12 +14,26 @@ public static class IconCache
     {
         var value = actionId.ToString("N");
         if (png is null || PathFor(dataFolder, value) is not { } path) return fallback;
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var tmp = path + ".tmp";
-        File.WriteAllBytes(tmp, png);
-        File.Move(tmp, path, overwrite: true); // a crash never leaves a half-written icon
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(tmp, png);
+            File.Move(tmp, path, overwrite: true); // a crash never leaves a half-written icon
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            try { File.Delete(tmp); } catch (Exception) { }
+            return fallback;
+        }
         return new IconRef("exe", value);
     }
+
+    /// <summary>Whether the icon of this expanded path may be read: a local-drive path (X:\...) to an .exe, .dll or .ico. The elevated app must not run shell icon handlers (per-user registrable) for other types or UNC paths.</summary>
+    public static bool CanExtractFrom(string expandedPath)
+        => expandedPath.Length > 3 && char.IsAsciiLetter(expandedPath[0]) && expandedPath[1] == ':' && expandedPath[2] == '\\'
+           && Path.GetExtension(expandedPath) is var ext
+           && (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase) || ext.Equals(".dll", StringComparison.OrdinalIgnoreCase) || ext.Equals(".ico", StringComparison.OrdinalIgnoreCase));
 
     public static void Remove(string dataFolder, Guid actionId)
     {

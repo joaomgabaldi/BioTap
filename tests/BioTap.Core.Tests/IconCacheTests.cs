@@ -57,4 +57,37 @@ public class IconCacheTests : IDisposable
         IconCache.Remove(folder, id);
         Assert.False(File.Exists(IconCache.PathFor(folder, r.Value)!));
     }
+
+    [Theory]
+    [InlineData(@"C:\x\a.exe", true)]
+    [InlineData(@"C:\x\a.DLL", true)]
+    [InlineData(@"d:\x\a.ico", true)]
+    [InlineData(@"C:\x\a.txt", false)]
+    [InlineData(@"C:\x\a.lnk", false)]
+    [InlineData(@"C:\x\a.bat", false)]
+    [InlineData(@"C:\x\folder", false)]
+    [InlineData(@"\host\share\a.exe", false)]
+    [InlineData(@"\?\C:\x\a.exe", false)]
+    [InlineData(@"a.exe", false)]
+    [InlineData(@"\x\a.exe", false)]
+    public void CanExtractFrom_OnlyLocalDriveExeDllIco(string path, bool expected) => Assert.Equal(expected, IconCache.CanExtractFrom(path));
+
+    [Fact]
+    public void Store_OverwritesExisting_AndLeavesNoTmp()
+    {
+        var id = Guid.NewGuid();
+        IconCache.Store(folder, id, [1], Fallback);
+        var r = IconCache.Store(folder, id, [9, 9], Fallback);
+        Assert.Equal(new byte[] { 9, 9 }, File.ReadAllBytes(IconCache.PathFor(folder, r.Value)!));
+        Assert.Empty(Directory.GetFiles(Path.Combine(folder, "icons"), "*.tmp"));
+    }
+
+    [Fact]
+    public void Store_WriteFails_ReturnsFallback_AndLeavesNoTmp()
+    {
+        var id = Guid.NewGuid();
+        Directory.CreateDirectory(IconCache.PathFor(folder, id.ToString("N"))!); // a directory where the file should go
+        Assert.Equal(Fallback, IconCache.Store(folder, id, [1], Fallback));
+        Assert.Empty(Directory.GetFiles(Path.Combine(folder, "icons"), "*.tmp"));
+    }
 }
