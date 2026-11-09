@@ -7,3 +7,4 @@ RegisterWindowMessage
 GetDpiForWindow
 SetLayeredWindowAttributes
 SetForegroundWindow
+MessageBox

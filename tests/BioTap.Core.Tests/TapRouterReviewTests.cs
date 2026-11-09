@@ -112,6 +112,25 @@ public class TapRouterReviewTests
 public class TapRouterTestRunTests
 {
     [Fact]
+    public async Task Test_OfAnActionWithInvalidParams_IsBlocked_AndNeverRuns()
+    {
+        // Invalid actions load disabled but stay listed with a "Testar" button: the rules apply at the run itself
+        var p = new FakePreset("fake") { Invalid = "Comando com quebra de linha" };
+        var outcomes = new ConcurrentQueue<ActionOutcome>();
+        var action = new ActionConfig(Guid.NewGuid(), 4, "Inválida", false, new IconRef("glyph", "E70B"), "fake", new JsonObject());
+        var r = new TapRouter(() => AppConfig.Default, new PresetCatalog([p]));
+        r.Outcome += outcomes.Enqueue;
+        r.Test(action);
+        var deadline = Environment.TickCount64 + 5000;
+        while (outcomes.IsEmpty && Environment.TickCount64 < deadline) await Task.Delay(5);
+        await Task.Delay(50);
+        Assert.Equal(0, p.Runs);
+        var o = Assert.Single(outcomes);
+        Assert.Equal(OutcomeKind.Blocked, o.Kind);
+        Assert.Equal("Comando com quebra de linha", o.Detail);
+    }
+
+    [Fact]
     public async Task Test_RunsTheGivenAction_EvenWhenDisabled()
     {
         var p = new FakePreset("fake");

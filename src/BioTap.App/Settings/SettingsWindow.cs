@@ -53,7 +53,7 @@ sealed class SettingsWindow
 
         window = new Window { Title = "BioTap — Preferências", SystemBackdrop = new MicaBackdrop(), Content = nav };
         window.AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 680));
-        window.Closed += (_, _) => Closed?.Invoke();
+        window.Closed += (_, _) => Ui.Run(() => Closed?.Invoke(), "settings closed");
         hwnd = new HWND(WinRT.Interop.WindowNative.GetWindowHandle(window));
         // NavigationView refuses SelectedItem before it is loaded (COMException 0x80070490): select once it is
         nav.Loaded += (_, _) => loaded.TrySetResult();
@@ -167,9 +167,11 @@ sealed class SettingsWindow
         var preset = host.Presets.Get(a.Preset)?.DisplayName ?? a.Preset;
         var grid = new Grid { ColumnSpacing = 12, Padding = new Thickness(12), CornerRadius = new CornerRadius(8), Background = Theme.Brush("CardBackgroundFillColorDefaultBrush", Theme.Card) };
         foreach (var w in new[] { 40, 90, 0, 0, 0, 0, 0 }) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = w > 0 ? new GridLength(w) : (grid.ColumnDefinitions.Count == 2 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto) });
-        Add(grid, 0, new FontIcon { Glyph = Glyphs.For(new(OutcomeKind.Ran, "", null, a.Icon)), FontSize = 22 });
+        // Spec §5: an action the loader disabled as invalid says so (otherwise it just looks switched off)
+        var invalid = host.Loaded.InvalidActions.Contains(a.Id);
+        Add(grid, 0, new FontIcon { Glyph = invalid ? Glyphs.Warning : Glyphs.For(new(OutcomeKind.Ran, "", null, a.Icon)), FontSize = 22 });
         Add(grid, 1, new TextBlock { Text = $"{a.Taps} toques", VerticalAlignment = VerticalAlignment.Center });
-        Add(grid, 2, new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { new TextBlock { Text = a.Name }, new TextBlock { Text = preset, FontSize = 12, Opacity = 0.7 } } });
+        Add(grid, 2, new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { new TextBlock { Text = a.Name }, new TextBlock { Text = invalid ? "Inválida — abra Editar para corrigir" : preset, FontSize = 12, Opacity = 0.7 } } });
         Add(grid, 3, enabled);
         Add(grid, 4, edit);
         Add(grid, 5, test);
@@ -191,7 +193,10 @@ sealed class SettingsWindow
         var icon = new ComboBox { Header = "Ícone", MinWidth = 220 };
         foreach (var (glyph, label) in IconChoices)
             icon.Items.Add(new ComboBoxItem { Tag = glyph, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = Glyphs.For(new(OutcomeKind.Ran, "", null, new IconRef("glyph", glyph))) }, new TextBlock { Text = label } } } });
-        icon.SelectedItem = icon.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == action.Icon.Value) ?? icon.Items[0];
+        // A glyph outside the list (set in config.json) stays as it is unless the user picks another
+        if (!IconChoices.Any(c => c.Glyph == action.Icon.Value))
+            icon.Items.Add(new ComboBoxItem { Tag = action.Icon.Value, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = action.Icon.GlyphText() }, new TextBlock { Text = "Atual" } } } });
+        icon.SelectedItem = icon.Items.Cast<ComboBoxItem>().First(i => (string)i.Tag == action.Icon.Value);
         var error = new InfoBar { Severity = InfoBarSeverity.Error, IsClosable = false };
         var fields = PresetFields(action.Preset, action.Params);
 
@@ -303,7 +308,7 @@ sealed class SettingsWindow
             startWithWindows.Header = "Iniciar com o Windows (não foi possível ler o Agendador de Tarefas)";
         }
         var reverting = false;
-        startWithWindows.Toggled += (_, _) =>
+        startWithWindows.Toggled += (_, _) => Ui.Run(() =>
         {
             if (reverting) return;
             try
@@ -321,8 +326,10 @@ sealed class SettingsWindow
                 startWithWindows.IsOn = !startWithWindows.IsOn; // show the real state
                 reverting = false;
             }
-        };
+        }, "startup toggle");
 
+        RefreshStatus();
+        (status.Parent as Microsoft.UI.Xaml.Controls.Panel)?.Children.Remove(status); // still a child of the previous Geral page
         return new StackPanel
         {
             Spacing = 16,
@@ -330,10 +337,15 @@ sealed class SettingsWindow
             {
                 new TextBlock { Text = "Geral", Style = Theme.Style("SubtitleTextBlockStyle") },
                 timeout, save, startWithWindows,
-                new TextBlock { Text = "Estado: " + host.StatusText["BioTap: ".Length..], Opacity = 0.8 },
+                status,
             },
         };
     }
+
+    readonly TextBlock status = new() { Opacity = 0.8 }; // one control: the page is rebuilt, the text follows the connection
+
+    /// <summary>Called by AppHost on the UI thread whenever the service or sensor state changes.</summary>
+    public void RefreshStatus() => status.Text = "Estado: " + host.StatusText["BioTap: ".Length..];
 
     static readonly string InstalledExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "BioTap", "App", "BioTap.exe");
 

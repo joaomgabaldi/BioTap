@@ -27,10 +27,7 @@ sealed class SingleInstance : IDisposable
     /// <summary>Returns null when another BioTap is running (it was asked to show its panel).</summary>
     public static SingleInstance? TryStart(string dataFolder, FileLog log)
     {
-        Directory.CreateDirectory(dataFolder);
-        if (!IsAdminOnlyFolder(dataFolder))
-            log.Write("WARN", "ProgramData\\BioTap is writable by non-admins; reinstall to fix its permissions");
-
+        // Program.Main already made sure dataFolder exists and only admins can write it
         var lck = InstanceLock.TryAcquire(Path.Combine(dataFolder, "app.lock"));
         if (lck is null)
         {
@@ -87,12 +84,6 @@ sealed class SingleInstance : IDisposable
     static bool IsAdminOnly(EventWaitHandle e)
     {
         try { return AclGuard.IsAdminOnly(e.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Owner | AccessControlSections.Access)); }
-        catch (Exception) { return false; }
-    }
-
-    static bool IsAdminOnlyFolder(string folder)
-    {
-        try { return AclGuard.IsWritableOnlyByAdmins(new DirectoryInfo(folder).GetAccessControl()); }
         catch (Exception) { return false; }
     }
 

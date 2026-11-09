@@ -11,8 +11,12 @@ public sealed class FileLog(string folder, string name, long maxBytes = 1024 * 1
 
     public void Write(string level, string message)
     {
-        // A1: neutralize line breaks so a message cannot forge extra log lines
-        var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {level} {message.Replace('\r', ' ').Replace('\n', ' ')}{Environment.NewLine}";
+        // A1: neutralize every control character and line/paragraph separator so a message cannot forge log lines
+        var clean = string.Create(message.Length, message, (span, m) =>
+        {
+            for (var i = 0; i < m.Length; i++) span[i] = char.IsControl(m[i]) || m[i] is (char)0x2028 or (char)0x2029 ? ' ' : m[i];
+        });
+        var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {level} {clean}{Environment.NewLine}";
         try
         {
             lock (gate)

@@ -42,8 +42,11 @@ public sealed class ServiceConnection(Func<IPipeClient> factory, TimeProvider ti
             try
             {
                 client = factory();
-                // WaitAsync: the client's own connect may do uncancellable work (SCM, process queries)
-                await client.ConnectAsync(ct).WaitAsync(ConnectTimeout, time, ct);
+                // The token stops the pipe connect itself (left running, it spins a pool thread until the pipe
+                // appears); WaitAsync covers the uncancellable part (SCM, process queries)
+                using (var timeout = new CancellationTokenSource(ConnectTimeout, time))
+                using (var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token))
+                    await client.ConnectAsync(attempt.Token).WaitAsync(ConnectTimeout, time, ct);
                 connected = true;
                 await FlushPendingAsync(client, ct);
                 lock (gate) current = client;

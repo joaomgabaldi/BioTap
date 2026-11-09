@@ -56,6 +56,34 @@ public static class AclGuard
         }
     }
 
+    /// <summary>
+    /// The app's data folder (lock, logs, config). Created missing with only SYSTEM + Administrators, nothing inherited
+    /// (ProgramData lets Users create subfolders). Fails closed: an existing folder others can write, a reparse point
+    /// or an unreadable ACL returns false.
+    /// </summary>
+    public static bool EnsureAdminOnlyFolder(string path)
+    {
+        try
+        {
+            var dir = new DirectoryInfo(path);
+            if (!dir.Exists)
+            {
+                var sec = new DirectorySecurity();
+                sec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                foreach (var sid in new[] { SystemSid, Admins })
+                    sec.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                dir.Create(sec);
+                dir.Refresh();
+            }
+            return !dir.Attributes.HasFlag(FileAttributes.ReparsePoint) && IsWritableOnlyByAdmins(dir.GetAccessControl());
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     /// <summary>The file and the folder holding it (whoever can replace the file controls it too).</summary>
     public static bool IsSecure(FileSystemSecurity file, FileSystemSecurity folder)
         => IsWritableOnlyByAdmins(file) && IsWritableOnlyByAdmins(folder);

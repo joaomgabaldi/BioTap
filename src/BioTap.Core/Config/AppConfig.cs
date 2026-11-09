@@ -5,7 +5,14 @@ using System.Text.Json.Serialization;
 namespace BioTap.Core.Config;
 
 /// <param name="Kind">"glyph" (Segoe Fluent code point), "exe" or "preset".</param>
-public sealed record IconRef(string Kind, string Value);
+public sealed record IconRef(string Kind, string Value)
+{
+    /// <summary>The glyph as text, or "" when it is not a printable Unicode code point (config is hand-editable).</summary>
+    public string GlyphText()
+        => Kind == "glyph" && int.TryParse(Value, System.Globalization.NumberStyles.HexNumber, null, out var cp)
+           && cp is >= 0x20 and <= 0x10FFFF and not (>= 0xD800 and <= 0xDFFF)
+            ? char.ConvertFromUtf32(cp) : "";
+}
 
 public sealed record ActionConfig(Guid Id, int Taps, string Name, bool Enabled, IconRef Icon, string Preset, JsonObject Params)
 {

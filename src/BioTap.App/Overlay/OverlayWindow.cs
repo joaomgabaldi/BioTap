@@ -56,7 +56,7 @@ sealed class OverlayWindow
 
         hideTimer = window.DispatcherQueue.CreateTimer();
         hideTimer.IsRepeating = false;
-        hideTimer.Tick += (_, _) => window.AppWindow.Hide();
+        hideTimer.Tick += (_, _) => Ui.Run(window.AppWindow.Hide, "overlay hide");
     }
 
     /// <summary>Call on the UI thread.</summary>

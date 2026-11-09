@@ -17,7 +17,7 @@ public class StartupTaskElevatedTests
             Assert.False(task.IsEnabled());
             task.Enable(Path.Combine(Environment.SystemDirectory, "notepad.exe")); // System32: admin-only, passes the check
             Assert.True(task.IsEnabled());
-            task.Enable(Path.Combine(Environment.SystemDirectory, "notepad.exe")); // System32: admin-only, passes the check // idempotent update
+            task.Enable(Path.Combine(Environment.SystemDirectory, "notepad.exe")); // idempotent update
             task.Disable();
             Assert.False(task.IsEnabled());
             task.Disable(); // already gone: no error

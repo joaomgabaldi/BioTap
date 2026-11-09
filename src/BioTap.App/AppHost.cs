@@ -14,7 +14,8 @@ namespace BioTap.App;
 /// </summary>
 sealed class AppHost(DispatcherQueue ui)
 {
-    const string ServiceExe = @"%ProgramFiles%\BioTap\BioTap.Service.exe";
+    // Not %ProgramFiles%: the environment of this elevated process comes from the user (HKCU\Environment)
+    static readonly string ServiceExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "BioTap", "BioTap.Service.exe");
 
     readonly string configPath = Path.Combine(Program.DataFolder, "config.json");
     readonly CancellationTokenSource stop = new();
@@ -55,21 +56,21 @@ sealed class AppHost(DispatcherQueue ui)
         tray.ExitRequested += Exit;
 
         router = new TapRouter(() => loaded.Config, presets);
-        router.Outcome += o => ui.TryEnqueue(() =>
+        router.Outcome += o => ui.TryEnqueue(() => Shell.Ui.Run(() =>
         {
             var c = loaded.Config;
             if (c.Overlay.Enabled) overlay.Show(o, TimeSpan.FromMilliseconds(c.Overlay.DurationMs));
-        });
+        }, "overlay"));
 
         connection = new ServiceConnection(() => new PipeClient(PipeServerName, ServiceExe), TimeProvider.System);
         connection.Tapped += router.OnTaps;
-        connection.StateChanged += s => ui.TryEnqueue(() =>
+        connection.StateChanged += s => ui.TryEnqueue(() => Shell.Ui.Run(() =>
         {
             connectionState = s;
             if (s != ConnectionState.Connected) sensorState = null; // the old sensor status is unknown until the service reports again
             UpdateTray();
-        });
-        connection.SensorStateChanged += s => ui.TryEnqueue(() => { sensorState = s; UpdateTray(); });
+        }, "connection state"));
+        connection.SensorStateChanged += s => ui.TryEnqueue(() => Shell.Ui.Run(() => { sensorState = s; UpdateTray(); }, "sensor state"));
         _ = connection.RunAsync(stop.Token);
 
         UpdateTray();
@@ -113,6 +114,7 @@ sealed class AppHost(DispatcherQueue ui)
     {
         var text = PanelModel.TrayTooltip(connectionState, sensorState);
         tray.SetTooltip(text);
+        settings?.RefreshStatus();
         if (notifier.ShouldNotify(connectionState, sensorState)) tray.Notify("BioTap", text["BioTap: ".Length..]);
     }
 

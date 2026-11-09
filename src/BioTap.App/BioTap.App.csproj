@@ -11,6 +11,11 @@
     <!-- Without it `dotnet publish` leaves out BioTap.pri (app resources + compiled XAML): controls like
          NavigationView then find no template and WinUI fail-fasts natively (0xC000027B), with nothing logged -->
     <EnableMsixTooling>true</EnableMsixTooling>
+    <!-- The logon task starts this elevated process with the user's environment (HKCU\Environment, writable without
+         admin). Self-contained: the host no longer follows DOTNET_ROOT to another runtime; no startup hooks:
+         DOTNET_STARTUP_HOOKS cannot load a DLL into it -->
+    <SelfContained>true</SelfContained>
+    <StartupHookSupport>false</StartupHookSupport>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>

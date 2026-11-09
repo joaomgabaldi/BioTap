@@ -34,7 +34,7 @@ sealed class PanelWindow
     public PanelWindow()
     {
         var root = new Grid { Padding = new Thickness(Pad), Children = { row } };
-        root.KeyDown += (_, e) => { if (e.Key == VirtualKey.Escape) Hide(); };
+        root.KeyDown += (_, e) => Ui.Run(() => { if (e.Key == VirtualKey.Escape) Hide(); }, "panel key");
         window = new Window { SystemBackdrop = new BioTap.App.Shell.ActiveAcrylicBackdrop(), Content = root };
         if (window.AppWindow.Presenter is OverlappedPresenter p)
         {
@@ -45,7 +45,7 @@ sealed class PanelWindow
             p.IsAlwaysOnTop = true;
         }
         window.AppWindow.IsShownInSwitchers = false;
-        window.Activated += (_, e) => { if (e.WindowActivationState == WindowActivationState.Deactivated) Hide(); };
+        window.Activated += (_, e) => Ui.Run(() => { if (e.WindowActivationState == WindowActivationState.Deactivated) Hide(); }, "panel activated");
         hwnd = new HWND(WinRT.Interop.WindowNative.GetWindowHandle(window));
     }
 

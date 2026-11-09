@@ -14,8 +14,9 @@ sealed class FakePreset(string id) : IPreset
     public string? NotReady { get; set; }
     public Exception? Throws { get; set; }
     public TaskCompletionSource? Gate { get; set; }
+    public string? Invalid { get; set; }
     public int Runs;
-    public string? ValidateParams(JsonObject p) => null;
+    public string? ValidateParams(JsonObject p) => Invalid;
     public string? CheckReady(JsonObject p) => NotReady;
     public async Task RunAsync(JsonObject p, CancellationToken ct)
     {

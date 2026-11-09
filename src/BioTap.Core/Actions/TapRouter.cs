@@ -60,7 +60,8 @@ public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, Tim
     {
         try
         {
-            if (preset.CheckReady(action.Params) is { } reason)
+            // Last decision point: "Testar" reaches here with actions the loader disabled as invalid
+            if ((preset.ValidateParams(action.Params) ?? preset.CheckReady(action.Params)) is { } reason)
             {
                 Emit(new(OutcomeKind.Blocked, action.Name, reason, action.Icon));
                 return;

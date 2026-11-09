@@ -15,6 +15,16 @@ sealed class HangingPipeClient : IPipeClient
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
+/// <summary>Connect never completes on its own; records the token so a test can see whether the attempt was stopped.</summary>
+sealed class TokenRecordingHangingClient : IPipeClient
+{
+    public CancellationToken Token;
+    public Task ConnectAsync(CancellationToken ct) { Token = ct; return new TaskCompletionSource().Task; }
+    public async IAsyncEnumerable<Message> ReadAllAsync([EnumeratorCancellation] CancellationToken ct) { await Task.CompletedTask; yield break; }
+    public Task SendAsync(Message m, CancellationToken ct) => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
 sealed class FailingSendClient : IPipeClient
 {
     public readonly Channel<Message?> Incoming = Channel.CreateUnbounded<Message?>();
@@ -102,6 +112,17 @@ public sealed class ServiceConnectionReviewTests : IAsyncDisposable
         script.Enqueue(() => new HangingPipeClient());
         Start();
         await TickUntil(() => states.Contains(ConnectionState.ServiceMissing));
+    }
+
+    [Fact]
+    public async Task TimedOutConnect_IsCancelled_SoNoAttemptKeepsRunning()
+    {
+        // A connect left running after the timeout spins a pool thread until the pipe appears; they pile up
+        var hanging = new TokenRecordingHangingClient();
+        script.Enqueue(() => hanging);
+        Start();
+        await TickUntil(() => states.Contains(ConnectionState.ServiceMissing));
+        Assert.True(hanging.Token.IsCancellationRequested);
     }
 
     [Fact]

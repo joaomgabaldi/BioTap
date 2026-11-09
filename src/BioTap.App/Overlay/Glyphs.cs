@@ -14,6 +14,6 @@ static class Glyphs
         OutcomeKind.NothingConfigured => Unknown,
         OutcomeKind.Failed => Error,
         OutcomeKind.Blocked => Warning,
-        _ => o.Icon is { Kind: "glyph" } i && int.TryParse(i.Value, System.Globalization.NumberStyles.HexNumber, null, out var cp) ? char.ConvertFromUtf32(cp) : "",
+        _ => o.Icon?.GlyphText() ?? "",
     };
 }
