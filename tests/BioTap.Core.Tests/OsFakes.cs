@@ -40,3 +40,16 @@ sealed class FakeScreenCapture : IScreenCapture
     public byte[]? CaptureWindow(nint window) { Calls.Add($"Window({window})"); return WindowPng; }
     public void CopyImage(byte[] png) => Calls.Add("Copy:" + png.Length);
 }
+
+
+sealed class FakeClipboardText : IClipboardText
+{
+    public string? Text;
+    public string? ReadText() => Text;
+}
+
+sealed class FakeQrWindow : IQrWindow
+{
+    public readonly List<string> Shown = [];
+    public void Show(string text) => Shown.Add(text);
+}

@@ -47,6 +47,15 @@
           "Microsoft.WindowsAppSDK.WinUI": "2.6.5"
         }
       },
+      "QRCoder": {
+        "type": "Direct",
+        "requested": "[1.6.0, )",
+        "resolved": "1.6.0",
+        "contentHash": "XmPA81eo+oRxBuyVdswsSkTGTE1d3thfF11Z1PdD7oB56A6HU4G4AAOdySmGRMb/cljwlFTMWUtosGEnwpS6GA==",
+        "dependencies": {
+          "System.Drawing.Common": "6.0.0"
+        }
+      },
       "System.Drawing.Common": {
         "type": "Direct",
         "requested": "[10.0.0, )",

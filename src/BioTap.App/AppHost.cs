@@ -58,6 +58,7 @@ sealed class AppHost(DispatcherQueue ui)
             new TopmostPreset(windows), new MinimizeOthersPreset(windows), new LockPreset(windows),
             new AudioCyclePreset(audio), new VolumeSetPreset(audio),
             new ScreenshotPreset(new Os.ScreenCapture(ui), windows, () => DateTime.Now),
+            new QrCodePreset(new Os.WinRtClipboard(ui), new Qr.QrWindow(ui)),
         ]);
         Reload();
 
