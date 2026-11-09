@@ -117,6 +117,24 @@ public class TapRouterReviewTests
     }
 
     [Fact]
+    public async Task Sequence_HungStep_ReportsTheStepTimeout_NotTheGenericOne()
+    {
+        var time = new FakeTimeProvider();
+        var step = new FakePreset("hang") { HangUntilCancelled = true };
+        PresetCatalog? cat = null;
+        var seq = new SequencePreset(() => cat!, time);
+        cat = new PresetCatalog([step, seq]);
+        var args = new JsonObject { ["steps"] = new JsonArray(new JsonObject { ["preset"] = "hang", ["params"] = new JsonObject(), ["delayMs"] = 0 }) };
+        var action = new ActionConfig(Guid.NewGuid(), 1, "Seq", true, new IconRef("glyph", "E70B"), "sequence", args);
+        var r = new TapRouter(() => AppConfig.Default with { Actions = [action] }, cat, time);
+        r.Outcome += outcomes.Enqueue;
+        r.OnTaps(1);
+        await WaitUntil(() => step.Runs == 1);
+        for (var i = 0; i < 80 && !outcomes.Any(o => o.Kind == OutcomeKind.Failed); i++) { time.Advance(TimeSpan.FromSeconds(1)); await Task.Delay(5); }
+        Assert.Equal("Passo 1 (Fake hang): Tempo esgotado", outcomes.Single(o => o.Kind == OutcomeKind.Failed).Detail);
+    }
+
+    [Fact]
     public void Catalog_DuplicateIds_NamesTheId()
     {
         var e = Assert.Throws<InvalidOperationException>(() => new PresetCatalog([new FakePreset("x"), new FakePreset("x")]));

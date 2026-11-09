@@ -41,7 +41,6 @@ sealed class FakeScreenCapture : IScreenCapture
     public void CopyImage(byte[] png) => Calls.Add("Copy:" + png.Length);
 }
 
-
 sealed class FakeClipboardText : IClipboardText
 {
     public string? Text;
@@ -51,5 +50,11 @@ sealed class FakeClipboardText : IClipboardText
 sealed class FakeQrWindow : IQrWindow
 {
     public readonly List<string> Shown = [];
-    public void Show(string text) => Shown.Add(text);
+    public Exception? Throws;
+    public Task ShowAsync(string text)
+    {
+        if (Throws is not null) throw Throws;
+        Shown.Add(text);
+        return Task.CompletedTask;
+    }
 }

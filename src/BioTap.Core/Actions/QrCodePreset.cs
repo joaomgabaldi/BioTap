@@ -8,10 +8,10 @@ namespace BioTap.Core.Actions;
 public interface IClipboardText { string? ReadText(); }
 
 /// <summary>Shows the QR code of a text in a small window.</summary>
-public interface IQrWindow { void Show(string text); }
+public interface IQrWindow { Task ShowAsync(string text); } // completes once the window is shown
 
 /// <summary>qrCode: no params; encodes whatever text is on the clipboard.</summary>
-public sealed class QrCodePreset(IClipboardText clipboard, IQrWindow window) : IPreset
+public sealed class QrCodePreset(IClipboardText clipboard, IQrWindow window, TimeProvider? time = null) : IPreset
 {
     const int MaxChars = 2900, MaxBytes = 2953; // QR version 40-L byte capacity
 
@@ -29,11 +29,12 @@ public sealed class QrCodePreset(IClipboardText clipboard, IQrWindow window) : I
         return text.Length > MaxChars || Encoding.UTF8.GetByteCount(text) > MaxBytes ? "O texto copiado passa de 2.900 caracteres" : null;
     }
 
-    public Task RunAsync(JsonObject p, CancellationToken ct)
+    public async Task RunAsync(JsonObject p, CancellationToken ct)
     {
         var text = clipboard.ReadText(); // read again: the clipboard may have changed since CheckReady
         if (Problem(text) is { } problem) throw new PresetException(problem);
-        window.Show(text!);
-        return Task.CompletedTask;
+        try { await window.ShowAsync(text!).WaitAsync(TimeSpan.FromSeconds(2), time ?? TimeProvider.System, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception) { throw new PresetException("Não foi possível mostrar o QR code"); }
     }
 }

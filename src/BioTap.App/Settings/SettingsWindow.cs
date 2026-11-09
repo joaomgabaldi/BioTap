@@ -211,8 +211,10 @@ sealed class SettingsWindow
         ContentDialog? dialogRef = null;
         UIElement? mainContent = null;
         // A sequence step editor takes over the one dialog; Salvar/Testar stay off so half-edited state is never saved
+        var stepShowing = false;
         void Swap(UIElement? step)
         {
+            stepShowing = step is not null;
             dialogRef!.Content = step ?? mainContent;
             dialogRef.IsPrimaryButtonEnabled = dialogRef.IsSecondaryButtonEnabled = step is null;
         }
@@ -230,6 +232,11 @@ sealed class SettingsWindow
         };
 
         dialogRef = dialog;
+        // Esc / Cancelar inside a step editor goes back to the sequence (dropping only that step's unsaved edits) instead of closing the dialog
+        dialog.Closing += (_, e) => Ui.Run(() =>
+        {
+            if (stepShowing && e.Result == ContentDialogResult.None) { e.Cancel = true; Swap(null); }
+        }, "editor closing");
         mainContent = dialog.Content as UIElement;
 
         ActionConfig Edited() => action with
@@ -273,8 +280,10 @@ sealed class SettingsWindow
         {
             var target = edited.Params["target"] is JsonValue v && v.TryGetValue<string>(out var t) ? t : "";
             var png = await Task.Run(() => new IconExtractor().ExtractPng(target, 48)); // reads the disk
-            // An action that already has a cached icon keeps it when the program can't be read now
-            if (png is not null || action.Icon.Kind != "exe")
+            // An action that already has a cached icon keeps it only when this target is extractable (so the failure was transient);
+            // a new target that can never give an icon (URL, .txt…) falls back to the glyph and the cached file is removed below
+            var keepOld = png is null && action.Icon.Kind == "exe" && IconCache.CanExtractFrom(Environment.ExpandEnvironmentVariables(target).Replace('/', '\\'));
+            if (!keepOld)
                 edited = edited with { Icon = IconCache.Store(Program.DataFolder, edited.Id, png, host.Presets.Get(edited.Preset)?.DefaultIcon ?? new IconRef("glyph", "E8E5")) };
         }
         if (!await SaveAsync(ActionEditor.WithAction(saved, edited))) return;

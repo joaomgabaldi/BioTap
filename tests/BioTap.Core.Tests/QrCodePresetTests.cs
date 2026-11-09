@@ -47,6 +47,15 @@ public class QrCodePresetTests
     }
 
     [Fact]
+    public async Task Run_throws_a_fixed_message_when_the_window_fails()
+    {
+        var (p, _, w) = Make("segredo");
+        w.Throws = new InvalidOperationException(@"segredo C:\x");
+        var e = await Assert.ThrowsAsync<PresetException>(() => p.RunAsync([], CancellationToken.None));
+        Assert.Equal("Não foi possível mostrar o QR code", e.Message);
+    }
+
+    [Fact]
     public void Metadata_and_params()
     {
         var (p, _, _) = Make("x");

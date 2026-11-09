@@ -33,9 +33,16 @@ sealed class QrWindow(DispatcherQueue ui) : IQrWindow
     bool visible, clickCloses;
     DispatcherQueueTimer? timer;
 
-    public void Show(string text)
+    public Task ShowAsync(string text)
     {
-        if (!ui.TryEnqueue(() => Ui.Run(() => ShowOnUi(text), "qr show"))) throw new PresetException("Não foi possível mostrar o QR code");
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var queued = ui.TryEnqueue(() => Ui.Run(() =>
+        {
+            try { ShowOnUi(text); done.TrySetResult(); }
+            catch (Exception e) { done.TrySetException(e); throw; } // Ui.Run still logs it
+        }, "qr show"));
+        if (!queued) done.TrySetException(new InvalidOperationException("ui queue closed"));
+        return done.Task;
     }
 
     /// <summary>

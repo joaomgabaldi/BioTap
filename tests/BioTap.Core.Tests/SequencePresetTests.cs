@@ -57,6 +57,14 @@ public class SequencePresetTests
     }
 
     [Fact]
+    public async Task StepThrowingOperationCanceledOnItsOwn_IsAnExecutionError()
+    {
+        b.Throws = new OperationCanceledException();
+        var e = await Assert.ThrowsAsync<PresetException>(() => seq.RunAsync(Steps(("b", 0)), CancellationToken.None));
+        Assert.Equal("Passo 1 (Fake b): Erro ao executar", e.Message);
+    }
+
+    [Fact]
     public async Task StepTimeout_NamesTheStep()
     {
         b.Gate = new TaskCompletionSource();
@@ -146,12 +154,12 @@ public class SequencePresetTests
 
     [Fact]
     public void MaxRunTime_CoversDelaysAndSteps()
-        => Assert.Equal(TimeSpan.FromSeconds(125), seq.MaxRunTime(Steps(("a", 0), ("b", 5000))));
+        => Assert.Equal(TimeSpan.FromSeconds(135), seq.MaxRunTime(Steps(("a", 0), ("b", 5000))));
 
     [Fact]
     public void MaxRunTime_UsesEachStepsOwn()
     {
         b.MaxRun = TimeSpan.FromSeconds(100);
-        Assert.Equal(TimeSpan.FromSeconds(60 + 5 + 100 + 60), seq.MaxRunTime(Steps(("a", 0), ("b", 5000), ("nope", 0))));
+        Assert.Equal(TimeSpan.FromSeconds(60 + 5 + 100 + 60 + 15), seq.MaxRunTime(Steps(("a", 0), ("b", 5000), ("nope", 0))));
     }
 }

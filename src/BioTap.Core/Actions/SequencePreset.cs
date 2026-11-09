@@ -9,6 +9,8 @@ public sealed class SequencePreset(Func<PresetCatalog> catalog, TimeProvider tim
     public const int MaxSteps = 20;
     public const int MaxDelayMs = 10_000;
     static readonly TimeSpan PerStep = TimeSpan.FromSeconds(60);
+    // Slack per step so the step-level "Tempo esgotado" (with the step name) always fires before the router's generic one
+    static readonly TimeSpan Slack = TimeSpan.FromSeconds(5);
 
     public string Id => "sequence";
     public string DisplayName => "Sequência de ações";
@@ -57,7 +59,7 @@ public sealed class SequencePreset(Func<PresetCatalog> catalog, TimeProvider tim
         var (steps, _) = Parse(p);
         if (steps is null) return PerStep;
         var cat = catalog();
-        return steps.Aggregate(TimeSpan.Zero, (t, s) => t + TimeSpan.FromMilliseconds(s.DelayMs) + (cat.Get(s.Preset)?.MaxRunTime(s.Params) ?? PerStep));
+        return steps.Aggregate(TimeSpan.Zero, (t, s) => t + TimeSpan.FromMilliseconds(s.DelayMs) + (cat.Get(s.Preset)?.MaxRunTime(s.Params) ?? PerStep) + Slack);
     }
 
     public async Task RunAsync(JsonObject p, CancellationToken ct)
@@ -81,7 +83,7 @@ public sealed class SequencePreset(Func<PresetCatalog> catalog, TimeProvider tim
                 await preset.RunAsync(s.Params, stepCts.Token).WaitAsync(max, time, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (OperationCanceledException) { throw new PresetException(label + "Tempo esgotado"); }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested) { throw new PresetException(label + "Tempo esgotado"); }
             catch (PresetException e) when (e.Message.StartsWith(label, StringComparison.Ordinal)) { throw; }
             catch (TimeoutException) { throw new PresetException(label + "Tempo esgotado"); }
             catch (PresetException e) { throw new PresetException(label + e.Message); }

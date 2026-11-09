@@ -278,17 +278,20 @@ static class PresetEditors
         var saved = p["deviceIds"] is JsonArray a ? a.Select(n => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : "").Where(s => s.Length > 0).Distinct().ToList() : [];
         var panel = new StackPanel { Spacing = 4 };
         List<AudioDevice> present;
-        try { present = [.. new Os.WindowsAudio().Outputs()]; }
+        List<AudioRow> rows;
+        try
+        {
+            present = [.. new Os.WindowsAudio().Outputs()];
+            // saved ones first, in their saved order (also when unplugged), then the other connected devices
+            rows = saved.Select(id => present.FirstOrDefault(d => d.Id == id) is { } d ? new AudioRow(id, d.Name, true) : new AudioRow(id, (Os.WindowsAudio.KnownName(id) ?? "Dispositivo desconhecido") + " (desconectado)", true)).ToList();
+            rows.AddRange(present.Where(d => !saved.Contains(d.Id)).Select(d => new AudioRow(d.Id, d.Name, false)));
+        }
         catch (Exception e)
         {
             Program.Log.Write("ERROR", "Audio list: " + e.GetType().Name);
             panel.Children.Add(new TextBlock { Text = "Não foi possível listar os dispositivos" });
             return (panel, () => (JsonObject)p.DeepClone()); // keep whatever is stored
         }
-
-        // saved ones first, in their saved order (also when unplugged), then the other connected devices
-        var rows = saved.Select(id => present.FirstOrDefault(d => d.Id == id) is { } d ? new AudioRow(id, d.Name, true) : new AudioRow(id, (Os.WindowsAudio.KnownName(id) ?? "Dispositivo desconhecido") + " (desconectado)", true)).ToList();
-        rows.AddRange(present.Where(d => !saved.Contains(d.Id)).Select(d => new AudioRow(d.Id, d.Name, false)));
 
         void Render()
         {

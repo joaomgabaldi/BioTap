@@ -10,33 +10,42 @@ sealed class SendInputKeyboard : IKeyboard
 {
     const int MaxCodeUnitsPerCall = 500; // two inputs (down, up) each
 
+    // Presets can run concurrently (sequences, timeouts); interleaved SendInput calls would mix chords and text
+    readonly object gate = new();
+
     public void Chord(IReadOnlyList<ushort> keys)
     {
         var downs = keys.Select(k => Key(k, up: false)).ToList();
         var ups = keys.Reverse().Select(k => Key(k, up: true)).ToList();
-        // Releasing a key that is not down is harmless; a modifier left down is not
-        try { Send(downs); }
-        finally { Send(ups); }
+        lock (gate)
+        {
+            // Releasing a key that is not down is harmless; a modifier left down is not
+            try { Send(downs); }
+            finally { Send(ups); }
+        }
     }
 
     public void Tap(ushort key, int times)
     {
         var inputs = new List<INPUT>();
         for (var i = 0; i < times; i++) { inputs.Add(Key(key, up: false)); inputs.Add(Key(key, up: true)); }
-        Send(inputs);
+        lock (gate) Send(inputs);
     }
 
     public void Type(string text)
     {
         var inputs = new List<INPUT>();
-        foreach (var c in text)
+        lock (gate) // held for the whole text so nothing is typed in the middle of it
         {
-            if (c == '\r') continue;
-            if (c == '\n') { inputs.Add(Key(0x0D, up: false)); inputs.Add(Key(0x0D, up: true)); }
-            else { inputs.Add(Unicode(c, up: false)); inputs.Add(Unicode(c, up: true)); }
-            if (inputs.Count >= MaxCodeUnitsPerCall * 2) { Send(inputs); inputs.Clear(); }
+            foreach (var c in text)
+            {
+                if (c == '\r') continue;
+                if (c == '\n') { inputs.Add(Key(0x0D, up: false)); inputs.Add(Key(0x0D, up: true)); }
+                else { inputs.Add(Unicode(c, up: false)); inputs.Add(Unicode(c, up: true)); }
+                if (inputs.Count >= MaxCodeUnitsPerCall * 2) { Send(inputs); inputs.Clear(); }
+            }
+            if (inputs.Count > 0) Send(inputs);
         }
-        if (inputs.Count > 0) Send(inputs);
     }
 
     static INPUT Key(ushort vk, bool up)
