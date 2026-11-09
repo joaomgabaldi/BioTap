@@ -33,11 +33,14 @@ sealed class QrWindow(DispatcherQueue ui) : IQrWindow
     bool visible, clickCloses;
     DispatcherQueueTimer? timer;
 
-    public Task ShowAsync(string text)
+    public Task ShowAsync(string text, CancellationToken abandon)
     {
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int state = 0; // 0 queued, 1 running, 2 abandoned by the caller (it already reported failure: show nothing late)
+        abandon.Register(() => Interlocked.CompareExchange(ref state, 2, 0));
         var queued = ui.TryEnqueue(() => Ui.Run(() =>
         {
+            if (Interlocked.CompareExchange(ref state, 1, 0) != 0) return;
             try { ShowOnUi(text); done.TrySetResult(); }
             catch (Exception e) { done.TrySetException(e); throw; } // Ui.Run still logs it
         }, "qr show"));

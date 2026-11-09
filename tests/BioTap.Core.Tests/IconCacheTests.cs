@@ -66,8 +66,8 @@ public class IconCacheTests : IDisposable
     [InlineData(@"C:\x\a.lnk", false)]
     [InlineData(@"C:\x\a.bat", false)]
     [InlineData(@"C:\x\folder", false)]
-    [InlineData(@"\host\share\a.exe", false)]
-    [InlineData(@"\?\C:\x\a.exe", false)]
+    [InlineData(@"\\host\share\a.exe", false)]
+    [InlineData(@"\\?\C:\x\a.exe", false)]
     [InlineData(@"a.exe", false)]
     [InlineData(@"\x\a.exe", false)]
     public void CanExtractFrom_OnlyLocalDriveExeDllIco(string path, bool expected) => Assert.Equal(expected, IconCache.CanExtractFrom(path));

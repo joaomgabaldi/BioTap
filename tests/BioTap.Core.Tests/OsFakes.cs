@@ -51,10 +51,13 @@ sealed class FakeQrWindow : IQrWindow
 {
     public readonly List<string> Shown = [];
     public Exception? Throws;
-    public Task ShowAsync(string text)
+    public TaskCompletionSource? Gate; // when set, the show completes only when the test releases it
+    public bool Abandoned;
+    public async Task ShowAsync(string text, CancellationToken abandon)
     {
         if (Throws is not null) throw Throws;
+        if (Gate is not null) await Gate.Task;
+        if (abandon.IsCancellationRequested) { Abandoned = true; return; } // the real window does nothing once abandoned
         Shown.Add(text);
-        return Task.CompletedTask;
     }
 }

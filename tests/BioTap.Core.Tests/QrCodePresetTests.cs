@@ -56,6 +56,23 @@ public class QrCodePresetTests
     }
 
     [Fact]
+    public async Task Late_window_is_abandoned_not_shown()
+    {
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var w = new FakeQrWindow { Gate = new TaskCompletionSource() };
+        var p = new QrCodePreset(new FakeClipboardText { Text = "x" }, w, time);
+        var run = p.RunAsync([], CancellationToken.None);
+        time.Advance(TimeSpan.FromSeconds(2));
+        var e = await Assert.ThrowsAsync<PresetException>(() => run);
+        Assert.Equal("Não foi possível mostrar o QR code", e.Message);
+        w.Gate.SetResult();
+        var end = Environment.TickCount64 + 5000;
+        while (!w.Abandoned && Environment.TickCount64 < end) await Task.Delay(2);
+        Assert.True(w.Abandoned);
+        Assert.Empty(w.Shown);
+    }
+
+    [Fact]
     public void Metadata_and_params()
     {
         var (p, _, _) = Make("x");

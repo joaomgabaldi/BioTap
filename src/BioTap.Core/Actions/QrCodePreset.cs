@@ -8,7 +8,7 @@ namespace BioTap.Core.Actions;
 public interface IClipboardText { string? ReadText(); }
 
 /// <summary>Shows the QR code of a text in a small window.</summary>
-public interface IQrWindow { Task ShowAsync(string text); } // completes once the window is shown
+public interface IQrWindow { Task ShowAsync(string text, CancellationToken abandon); } // completes once shown; once abandon is cancelled the window must not show
 
 /// <summary>qrCode: no params; encodes whatever text is on the clipboard.</summary>
 public sealed class QrCodePreset(IClipboardText clipboard, IQrWindow window, TimeProvider? time = null) : IPreset
@@ -33,8 +33,9 @@ public sealed class QrCodePreset(IClipboardText clipboard, IQrWindow window, Tim
     {
         var text = clipboard.ReadText(); // read again: the clipboard may have changed since CheckReady
         if (Problem(text) is { } problem) throw new PresetException(problem);
-        try { await window.ShowAsync(text!).WaitAsync(TimeSpan.FromSeconds(2), time ?? TimeProvider.System, ct); }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception) { throw new PresetException("Não foi possível mostrar o QR code"); }
+        using var abandon = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        try { await window.ShowAsync(text!, abandon.Token).WaitAsync(TimeSpan.FromSeconds(2), time ?? TimeProvider.System, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { abandon.Cancel(); throw; }
+        catch (Exception) { abandon.Cancel(); throw new PresetException("Não foi possível mostrar o QR code"); }
     }
 }
