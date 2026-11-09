@@ -47,7 +47,7 @@ sealed class SettingsWindow
         nav.MenuItems.Add(new NavigationViewItem { Content = "Ações", Icon = new FontIcon { Glyph = "\uE8FD" }, Tag = "actions" });
         nav.MenuItems.Add(new NavigationViewItem { Content = "Geral", Icon = new FontIcon { Glyph = "\uE713" }, Tag = "general" });
         nav.MenuItems.Add(new NavigationViewItem { Content = "Aparência e feedback", Icon = new FontIcon { Glyph = "\uE790" }, Tag = "appearance" });
-        nav.SelectionChanged += (_, e) => ShowPage((e.SelectedItem as NavigationViewItem)?.Tag as string);
+        nav.SelectionChanged += (_, e) => Ui.Run(() => ShowPage((e.SelectedItem as NavigationViewItem)?.Tag as string), "settings page");
         // One layout for the window's lifetime: the banner keeps a single parent; only the page changes
         nav.Content = new ScrollViewer { Content = new StackPanel { Padding = new Thickness(32, 24, 32, 32), Spacing = 12, Children = { banner, pageHost } } };
 
@@ -55,18 +55,30 @@ sealed class SettingsWindow
         window.AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 680));
         window.Closed += (_, _) => Closed?.Invoke();
         hwnd = new HWND(WinRT.Interop.WindowNative.GetWindowHandle(window));
-        nav.SelectedItem = nav.MenuItems[0];
+        // NavigationView refuses SelectedItem before it is loaded (COMException 0x80070490): select once it is
+        nav.Loaded += (_, _) => loaded.TrySetResult();
     }
+
+    readonly TaskCompletionSource loaded = new();
 
     public async void Show(Guid? actionId)
     {
-        window.Activate();
-        PInvoke.SetForegroundWindow(hwnd);
-        if (dialogOpen) return; // an editor is already open: just bring the window up
-        saved = host.Loaded.Config; // pick up a config reloaded since this window was built
-        if (actionId is not { } id) return;
-        nav.SelectedItem = nav.MenuItems[0];
-        if (saved.Actions.FirstOrDefault(a => a.Id == id) is { } action) await EditAsync(action, isNew: false);
+        try
+        {
+            window.Activate();
+            PInvoke.SetForegroundWindow(hwnd);
+            await loaded.Task; // completes after the first Activate puts the content on screen
+            if (nav.SelectedItem is null) nav.SelectedItem = nav.MenuItems[0];
+            if (dialogOpen) return; // an editor is already open: just bring the window up
+            saved = host.Loaded.Config; // pick up a config reloaded since this window was built
+            if (actionId is not { } id) return;
+            nav.SelectedItem = nav.MenuItems[0];
+            if (saved.Actions.FirstOrDefault(a => a.Id == id) is { } action) await EditAsync(action, isNew: false);
+        }
+        catch (Exception e)
+        {
+            Program.Log.Write("ERROR", $"Settings show: {e}");
+        }
     }
 
     void ShowPage(string? tag)
@@ -119,7 +131,7 @@ sealed class SettingsWindow
         foreach (var preset in host.Presets.All)
         {
             var item = new MenuFlyoutItem { Text = preset.DisplayName };
-            item.Click += async (_, _) => await EditAsync(ActionEditor.NewAction(saved, preset), isNew: true);
+            item.Click += (_, _) => Ui.RunAsync(() => EditAsync(ActionEditor.NewAction(saved, preset), isNew: true), "new action");
             ((MenuFlyout)add.Flyout).Items.Add(item);
         }
         page.Children.Add(new TextBlock { Text = "Ações", Style = Theme.Style("SubtitleTextBlockStyle") });
@@ -133,17 +145,17 @@ sealed class SettingsWindow
     {
         var enabled = new ToggleSwitch { IsOn = a.Enabled, OnContent = "Ligada", OffContent = "Desligada", MinWidth = 0 };
         // Turning an action on or off saves at once (a single switch has nothing else to confirm)
-        enabled.Toggled += async (_, _) =>
+        enabled.Toggled += (_, _) => Ui.RunAsync(async () =>
         {
-            if (await SaveAsync(ActionEditor.WithAction(saved, a with { Enabled = enabled.IsOn }))) ShowPage("actions");
-            else ShowPage("actions"); // redraw with the real, unchanged state
-        };
+            await SaveAsync(ActionEditor.WithAction(saved, a with { Enabled = enabled.IsOn }));
+            ShowPage("actions"); // redraw with the real state (saved or unchanged)
+        }, "toggle action");
         var edit = new Button { Content = "Editar" };
-        edit.Click += async (_, _) => await EditAsync(a, isNew: false);
+        edit.Click += (_, _) => Ui.RunAsync(() => EditAsync(a, isNew: false), "edit action");
         var test = new Button { Content = "Testar" };
-        test.Click += (_, _) => host.Router.Test(a);
+        test.Click += (_, _) => Ui.Run(() => host.Router.Test(a), "test action");
         var remove = new Button { Content = "Excluir" };
-        remove.Click += async (_, _) =>
+        remove.Click += (_, _) => Ui.RunAsync(async () =>
         {
             var confirm = new ContentDialog
             {
@@ -151,7 +163,7 @@ sealed class SettingsWindow
                 PrimaryButtonText = "Excluir", CloseButtonText = "Cancelar", DefaultButton = ContentDialogButton.Close,
             };
             if (await ShowDialogAsync(confirm) == ContentDialogResult.Primary && await SaveAsync(ActionEditor.Without(saved, a.Id))) ShowPage("actions");
-        };
+        }, "delete action");
         var preset = host.Presets.Get(a.Preset)?.DisplayName ?? a.Preset;
         var grid = new Grid { ColumnSpacing = 12, Padding = new Thickness(12), CornerRadius = new CornerRadius(8), Background = Theme.Brush("CardBackgroundFillColorDefaultBrush", Theme.Card) };
         foreach (var w in new[] { 40, 90, 0, 0, 0, 0, 0 }) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = w > 0 ? new GridLength(w) : (grid.ColumnDefinitions.Count == 2 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto) });
@@ -202,16 +214,18 @@ sealed class SettingsWindow
             Params = fields.Read(),
         };
 
-        dialog.PrimaryButtonClick += (_, e) =>
+        dialog.PrimaryButtonClick += (_, e) => Ui.Run(() =>
         {
+            e.Cancel = true; // stays open unless the edit is valid
             if (ActionEditor.Check(saved, Edited(), host.Presets) is { } problem)
             {
                 error.Message = problem;
                 error.IsOpen = true;
-                e.Cancel = true;
+                return;
             }
-        };
-        dialog.SecondaryButtonClick += (_, e) =>
+            e.Cancel = false;
+        }, "editor save");
+        dialog.SecondaryButtonClick += (_, e) => Ui.Run(() =>
         {
             e.Cancel = true; // keep the dialog open while testing
             var edited = Edited();
@@ -223,7 +237,7 @@ sealed class SettingsWindow
             }
             error.IsOpen = false;
             host.Router.Test(edited);
-        };
+        }, "editor test");
 
         if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && await SaveAsync(ActionEditor.WithAction(saved, Edited())))
             ShowPage("actions");
@@ -278,7 +292,7 @@ sealed class SettingsWindow
     {
         var timeout = new NumberBox { Header = "Tempo para fechar a sequência de toques (ms)", Minimum = TapCounter.MinTimeoutMs, Maximum = TapCounter.MaxTimeoutMs, Value = saved.TapTimeoutMs, SmallChange = 50, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left };
         var save = new Button { Content = "Salvar", Style = Theme.Style("AccentButtonStyle") };
-        save.Click += async (_, _) => await SaveAsync(saved with { TapTimeoutMs = double.IsNaN(timeout.Value) ? saved.TapTimeoutMs : (int)Math.Round(timeout.Value) });
+        save.Click += (_, _) => Ui.RunAsync(() => SaveAsync(saved with { TapTimeoutMs = double.IsNaN(timeout.Value) ? saved.TapTimeoutMs : (int)Math.Round(timeout.Value) }), "save general");
 
         var startup = new StartupTask();
         var startWithWindows = new ToggleSwitch { Header = "Iniciar com o Windows" };
@@ -330,7 +344,7 @@ sealed class SettingsWindow
         var show = new ToggleSwitch { Header = "Mostrar o overlay quando uma ação roda", IsOn = saved.Overlay.Enabled };
         var duration = new NumberBox { Header = "Tempo na tela (ms)", Minimum = OverlayConfig.MinDurationMs, Maximum = OverlayConfig.MaxDurationMs, Value = saved.Overlay.DurationMs, SmallChange = 250, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left };
         var save = new Button { Content = "Salvar", Style = Theme.Style("AccentButtonStyle") };
-        save.Click += async (_, _) => await SaveAsync(saved with { Overlay = new OverlayConfig(show.IsOn, double.IsNaN(duration.Value) ? saved.Overlay.DurationMs : (int)Math.Round(duration.Value)) });
+        save.Click += (_, _) => Ui.RunAsync(() => SaveAsync(saved with { Overlay = new OverlayConfig(show.IsOn, double.IsNaN(duration.Value) ? saved.Overlay.DurationMs : (int)Math.Round(duration.Value)) }), "save appearance");
         return new StackPanel
         {
             Spacing = 16,

@@ -75,7 +75,7 @@ sealed class PanelWindow
             Opacity = 0.7,
         };
         ToolTipService.SetToolTip(gear, "Preferências");
-        gear.Click += (_, _) => { Hide(); GearClicked?.Invoke(); };
+        gear.Click += (_, _) => Ui.Run(() => { Hide(); GearClicked?.Invoke(); }, "panel gear");
         row.Children.Add(gear);
 
         var content = items.Count == 0 ? 190 : items.Count * Square + (items.Count - 1) * Gap;
@@ -97,7 +97,7 @@ sealed class PanelWindow
             Content = new FontIcon { Glyph = Glyphs.For(new(Core.Actions.OutcomeKind.Ran, "", null, item.Icon)), FontSize = 28 },
         };
         ToolTipService.SetToolTip(button, item.Name);
-        button.Click += (_, _) => { Hide(); ItemClicked?.Invoke(item.Id); };
+        button.Click += (_, _) => Ui.Run(() => { Hide(); ItemClicked?.Invoke(item.Id); }, "panel item");
         return new StackPanel
         {
             Spacing = 6,

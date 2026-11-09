@@ -88,12 +88,22 @@ sealed class AppHost(DispatcherQueue ui)
     /// <summary>One preferences window; reopened after it is closed. <paramref name="actionId"/> opens that action's editor.</summary>
     void OpenSettings(Guid? actionId)
     {
-        if (settings is null)
+        try
         {
-            settings = new Settings.SettingsWindow(this);
-            settings.Closed += () => settings = null;
+            if (settings is null)
+            {
+                settings = new Settings.SettingsWindow(this);
+                settings.Closed += () => settings = null;
+            }
+            settings.Show(actionId);
         }
-        settings.Show(actionId);
+        catch (Exception e)
+        {
+            // A broken preferences window must never take the tray app (and so the taps) down with it
+            Program.Log.Write("ERROR", $"Open settings: {e}");
+            settings = null;
+            tray.Notify("BioTap", "Não foi possível abrir as preferências.");
+        }
     }
 
     public void ShowPanel() => panel.Show(PanelModel.Items(loaded.Config));
