@@ -4,6 +4,8 @@
 $ErrorActionPreference = 'Stop'
 
 $svc = 'BioTap.Service'
+if (Get-ScheduledTask -TaskName 'BioTap' -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName 'BioTap' -Confirm:$false }
+Get-Process BioTap -ErrorAction SilentlyContinue | Stop-Process -Force
 if (Get-Service $svc -ErrorAction SilentlyContinue) {
     Stop-Service $svc -Force
     (Get-Service $svc).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))

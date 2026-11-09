@@ -17,15 +17,71 @@ public static class AclGuard
         (FileSystemRights)0x40000000 | // GENERIC_WRITE
         (FileSystemRights)0x10000000;  // GENERIC_ALL
 
-    static bool IsTrusted(IdentityReference? id) => id is SecurityIdentifier s && (s == SystemSid || s == Admins);
+    // Owns Windows' own files; more privileged than an admin, so it is trusted too
+    static readonly SecurityIdentifier TrustedInstaller = new("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464");
+
+    static bool IsTrusted(IdentityReference? id)
+        => id is SecurityIdentifier s && (s == SystemSid || s == Admins || s == TrustedInstaller);
 
     public static bool IsWritableOnlyByAdmins(FileSystemSecurity sec)
     {
         if (!IsTrusted(sec.GetOwner(typeof(SecurityIdentifier)))) return false;
         foreach (FileSystemAccessRule r in sec.GetAccessRules(true, true, typeof(SecurityIdentifier)))
+        {
+            // An inherit-only ACE (e.g. CREATOR OWNER on a system folder) applies to new children, not to this object
+            if (r.PropagationFlags.HasFlag(PropagationFlags.InheritOnly)) continue;
             if (r.AccessControlType == AccessControlType.Allow && (r.FileSystemRights & WriteRights) != 0 && !IsTrusted(r.IdentityReference))
                 return false;
+        }
         return true;
+    }
+
+    /// <summary>
+    /// For named kernel objects (mutex, event): owner is SYSTEM/Administrators and every allow ACE is for one of them.
+    /// Used to tell our own objects from ones a non-admin process created first under the same name (squatting).
+    /// </summary>
+    public static bool IsAdminOnly(string sddl)
+    {
+        try
+        {
+            var sd = new RawSecurityDescriptor(sddl);
+            if (!IsTrusted(sd.Owner) || sd.DiscretionaryAcl is null) return false;
+            foreach (var ace in sd.DiscretionaryAcl)
+                if (ace is CommonAce { AceQualifier: AceQualifier.AccessAllowed } a && !IsTrusted(a.SecurityIdentifier)) return false;
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The app's data folder (lock, logs, config). Created missing with only SYSTEM + Administrators, nothing inherited
+    /// (ProgramData lets Users create subfolders). Fails closed: an existing folder others can write, a reparse point
+    /// or an unreadable ACL returns false.
+    /// </summary>
+    public static bool EnsureAdminOnlyFolder(string path)
+    {
+        try
+        {
+            var dir = new DirectoryInfo(path);
+            if (!dir.Exists)
+            {
+                var sec = new DirectorySecurity();
+                sec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                foreach (var sid in new[] { SystemSid, Admins })
+                    sec.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                dir.Create(sec);
+                dir.Refresh();
+            }
+            return !dir.Attributes.HasFlag(FileAttributes.ReparsePoint) && IsWritableOnlyByAdmins(dir.GetAccessControl());
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>The file and the folder holding it (whoever can replace the file controls it too).</summary>

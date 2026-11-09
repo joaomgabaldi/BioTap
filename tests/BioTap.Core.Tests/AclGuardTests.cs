@@ -135,3 +135,36 @@ public class AclGuardFolderTests
         Assert.False(AclGuard.IsSecure(Secured(new FileSecurity()), dir));
     }
 }
+
+public class AclGuardSystemFilesTests
+{
+    static readonly SecurityIdentifier TrustedInstaller = new("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464");
+    static readonly SecurityIdentifier Admins = new("S-1-5-32-544");
+    static readonly SecurityIdentifier CreatorOwner = new("S-1-3-0");
+
+    [Fact]
+    public void OwnedByTrustedInstaller_IsSecure()
+    {
+        var s = new FileSecurity();
+        s.SetAccessRuleProtection(true, false);
+        s.SetOwner(TrustedInstaller);
+        s.AddAccessRule(new FileSystemAccessRule(TrustedInstaller, FileSystemRights.FullControl, AccessControlType.Allow));
+        s.AddAccessRule(new FileSystemAccessRule(Admins, FileSystemRights.ReadAndExecute, AccessControlType.Allow));
+        Assert.True(AclGuard.IsWritableOnlyByAdmins(s));
+    }
+
+    [Fact]
+    public void InheritOnlyCreatorOwnerAce_DoesNotApplyToTheFolderItself()
+    {
+        var s = new DirectorySecurity();
+        s.SetAccessRuleProtection(true, false);
+        s.SetOwner(TrustedInstaller);
+        s.AddAccessRule(new FileSystemAccessRule(Admins, FileSystemRights.FullControl, AccessControlType.Allow));
+        s.AddAccessRule(new FileSystemAccessRule(CreatorOwner, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.InheritOnly, AccessControlType.Allow));
+        Assert.True(AclGuard.IsWritableOnlyByAdmins(s));
+    }
+
+    [Fact]
+    public void RealSystem32Notepad_IsSecure()
+        => Assert.True(AclGuard.IsWritableOnlyByAdmins(Path.Combine(Environment.SystemDirectory, "notepad.exe")));
+}

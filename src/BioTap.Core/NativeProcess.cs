@@ -1,6 +1,7 @@
 using Microsoft.Win32.SafeHandles;
 using Windows.Win32;
 using System.Diagnostics;
+using Windows.Win32.Security;
 using Windows.Win32.System.Threading;
 
 namespace BioTap.Core;
@@ -63,6 +64,16 @@ public static class NativeProcess
         {
             return false;
         }
+    }
+
+    /// <summary>True when the process runs with an elevated admin token (a filtered admin token has Administrators as deny-only).</summary>
+    public static bool IsElevated(uint pid)
+    {
+        using var process = Open(pid);
+        if (process.IsInvalid || !PInvoke.OpenProcessToken(process, TOKEN_ACCESS_MASK.TOKEN_QUERY | TOKEN_ACCESS_MASK.TOKEN_DUPLICATE, out var token)) throw new IOException("Cannot read the process token");
+        using (token)
+        using (var identity = new System.Security.Principal.WindowsIdentity(token.DangerousGetHandle()))
+            return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
     }
 
     /// <summary>Active console session id, or -1 when there is none (e.g. while switching users).</summary>
