@@ -44,4 +44,18 @@ public sealed class WindowPresetTests
         Assert.Null(new MinimizeOthersPreset(w).ValidateParams([]));
         Assert.Null(new LockPreset(w).ValidateParams([]));
     }
+
+    [Fact]
+    public async Task Lock_IsReady_WithoutForegroundWindow() => Assert.Null(new LockPreset(w).CheckReady([]));
+
+    [Fact]
+    public async Task ForegroundLostBetweenCheckAndRun_Throws_AndNeverMinimizesEverything()
+    {
+        w.Sequence = new Queue<nint>([42, 0]);
+        Assert.Null(new MinimizeOthersPreset(w).CheckReady([]));
+        await Assert.ThrowsAsync<PresetException>(() => new MinimizeOthersPreset(w).RunAsync([], default));
+        w.Sequence = new Queue<nint>([0]);
+        await Assert.ThrowsAsync<PresetException>(() => new TopmostPreset(w).RunAsync([], default));
+        Assert.Empty(w.Calls);
+    }
 }

@@ -23,17 +23,19 @@ public abstract class WindowPreset(string id, string name, string glyph, IWindow
     public IconRef DefaultIcon => new("glyph", glyph);
     public string? ValidateParams(JsonObject p) => null;
     public virtual string? CheckReady(JsonObject p) => windows.Foreground() == 0 ? "Nenhuma janela em foco" : null;
+    /// <summary>The foreground may have changed since CheckReady; 0 must never reach the OS calls.</summary>
+    protected nint Target() { var h = windows.Foreground(); return h != 0 ? h : throw new PresetException("Nenhuma janela em foco"); }
     public abstract Task RunAsync(JsonObject p, CancellationToken ct);
 }
 
 public sealed class TopmostPreset(IWindows w) : WindowPreset("topmost", "Sempre no topo", "E718", w)
 {
-    public override Task RunAsync(JsonObject p, CancellationToken ct) { Windows.ToggleTopmost(Windows.Foreground()); return Task.CompletedTask; }
+    public override Task RunAsync(JsonObject p, CancellationToken ct) { Windows.ToggleTopmost(Target()); return Task.CompletedTask; }
 }
 
 public sealed class MinimizeOthersPreset(IWindows w) : WindowPreset("minimizeOthers", "Minimizar as outras janelas", "E73F", w)
 {
-    public override Task RunAsync(JsonObject p, CancellationToken ct) { Windows.MinimizeAllExcept(Windows.Foreground()); return Task.CompletedTask; }
+    public override Task RunAsync(JsonObject p, CancellationToken ct) { Windows.MinimizeAllExcept(Target()); return Task.CompletedTask; }
 }
 
 public sealed class LockPreset(IWindows w) : WindowPreset("lock", "Bloquear o Windows", "E72E", w)

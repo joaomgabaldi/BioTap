@@ -20,3 +20,6 @@ GetWindowTextLength
 ShowWindow
 LockWorkStation
 GetWindowThreadProcessId
+ShowWindowAsync
+DwmGetWindowAttribute
+DWMWINDOWATTRIBUTE
