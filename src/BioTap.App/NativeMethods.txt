@@ -28,3 +28,8 @@ IMMDeviceEnumerator
 IAudioEndpointVolume
 ERole
 EDataFlow
+MonitorFromPoint
+GetMonitorInfo
+MONITORINFO
+MONITOR_FROM_FLAGS
+IsWindow

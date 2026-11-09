@@ -26,8 +26,41 @@ static class PresetEditors
             "audioCycle" => AudioCycle(p),
             "volumeSet" => VolumeSet(p),
             "openTarget" => OpenTarget(S, windowId),
+            "screenshot" => Screenshot(S, B, windowId),
             _ => (new StackPanel(), () => (JsonObject)p.DeepClone()), // no params to edit (copy, paste…); keep whatever is stored
         };
+    }
+
+    static (UIElement, Func<JsonObject>) Screenshot(Func<string, string> S, Func<string, bool, bool> B, WindowId windowId)
+    {
+        // A new action has no params yet: show the defaults; Read writes them all
+        var target = new RadioButtons { Header = "O que capturar", Items = { "Tela", "Janela atual" }, SelectedIndex = S("target") == "window" ? 1 : 0 };
+        var save = new CheckBox { Content = "Salvar em uma pasta", IsChecked = B("save", true) };
+        var folder = new TextBox { Header = "Pasta", Text = S("folder") is { Length: > 0 } f ? f : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots"), MinWidth = 320 };
+        var browse = new Button { Content = "Procurar…" };
+        browse.Click += (_, _) => Ui.RunAsync(async () =>
+        {
+            try
+            {
+                var picker = new FolderPicker(windowId);
+                if (await picker.PickSingleFolderAsync() is { } picked) folder.Text = picked.Path;
+            }
+            catch (Exception e)
+            {
+                Program.Log.Write("ERROR", "Folder picker: " + e.GetType().Name);
+            }
+        }, "folder picker");
+        void Sync() => folder.IsEnabled = browse.IsEnabled = save.IsChecked == true;
+        save.Checked += (_, _) => Ui.Run(Sync, "screenshot save toggle");
+        save.Unchecked += (_, _) => Ui.Run(Sync, "screenshot save toggle");
+        Sync();
+        var copy = new CheckBox { Content = "Copiar para a área de transferência", IsChecked = B("copy", true) };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Bottom, Children = { folder, browse } };
+        return (new StackPanel { Spacing = 12, Children = { target, save, row, copy } }, () => new JsonObject
+        {
+            ["target"] = target.SelectedIndex == 1 ? "window" : "screen", ["save"] = save.IsChecked == true,
+            ["folder"] = folder.Text.Trim(), ["copy"] = copy.IsChecked == true,
+        });
     }
 
     static (UIElement, Func<JsonObject>) RunCommand(Func<string, string> S, Func<string, bool, bool> B)

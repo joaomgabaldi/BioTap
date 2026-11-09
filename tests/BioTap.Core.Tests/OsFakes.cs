@@ -31,3 +31,12 @@ sealed class FakeAudio : IAudio
     public void SetDefaultOutput(string id) => Calls.Add("Default:" + id);
     public void SetVolume(int percent) => Calls.Add("Volume:" + percent);
 }
+
+sealed class FakeScreenCapture : IScreenCapture
+{
+    public readonly List<string> Calls = [];
+    public byte[]? WindowPng = [9, 9];
+    public byte[] CaptureMonitorUnderMouse() { Calls.Add("Monitor"); return [1, 2, 3]; }
+    public byte[]? CaptureWindow(nint window) { Calls.Add($"Window({window})"); return WindowPng; }
+    public void CopyImage(byte[] png) => Calls.Add("Copy:" + png.Length);
+}

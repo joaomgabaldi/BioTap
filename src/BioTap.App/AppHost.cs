@@ -57,6 +57,7 @@ sealed class AppHost(DispatcherQueue ui)
             new TypeTextPreset(keyboard),
             new TopmostPreset(windows), new MinimizeOthersPreset(windows), new LockPreset(windows),
             new AudioCyclePreset(audio), new VolumeSetPreset(audio),
+            new ScreenshotPreset(new Os.ScreenCapture(ui), windows, () => DateTime.Now),
         ]);
         Reload();
 

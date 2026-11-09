@@ -11,3 +11,4 @@ WTSGetActiveConsoleSessionId
 OpenProcessToken
 TOKEN_ACCESS_MASK
 GetWindowThreadProcessId
+GetFinalPathNameByHandle
