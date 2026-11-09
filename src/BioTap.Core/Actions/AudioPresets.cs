@@ -82,3 +82,18 @@ public sealed class VolumeSetPreset(IAudio audio) : IPreset
         return Task.CompletedTask;
     }
 }
+
+public static class AudioIds
+{
+    const string Marker = "MMDEVAPI#";
+
+    /// <summary>MMDevice id out of a WinRT device id (<c>\?\SWD#MMDEVAPI#{id}#{interface}</c>); null when it does not match.</summary>
+    public static string? FromWinRt(string winrtId)
+    {
+        var start = winrtId.IndexOf(Marker, StringComparison.Ordinal);
+        if (start < 0) return null;
+        start += Marker.Length;
+        var end = winrtId.IndexOf('#', start);
+        return end > start ? winrtId[start..end] : null;
+    }
+}

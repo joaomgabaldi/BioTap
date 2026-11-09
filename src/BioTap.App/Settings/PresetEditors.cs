@@ -147,7 +147,7 @@ static class PresetEditors
         }
 
         // saved ones first, in their saved order (also when unplugged), then the other connected devices
-        var rows = saved.Select(id => present.FirstOrDefault(d => d.Id == id) is { } d ? new AudioRow(id, d.Name, true) : new AudioRow(id, id + " (desconectado)", true)).ToList();
+        var rows = saved.Select(id => present.FirstOrDefault(d => d.Id == id) is { } d ? new AudioRow(id, d.Name, true) : new AudioRow(id, (Os.WindowsAudio.KnownName(id) ?? "Dispositivo desconhecido") + " (desconectado)", true)).ToList();
         rows.AddRange(present.Where(d => !saved.Contains(d.Id)).Select(d => new AudioRow(d.Id, d.Name, false)));
 
         void Render()

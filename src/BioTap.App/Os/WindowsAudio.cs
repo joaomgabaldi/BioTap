@@ -1,11 +1,11 @@
 using System.Runtime.InteropServices;
 using BioTap.Core.Actions;
 using Windows.Win32;
-using Windows.Win32.Foundation;
 using Windows.Win32.Media.Audio;
 using Windows.Win32.Media.Audio.Endpoints;
 using Windows.Win32.System.Com;
-using Windows.Win32.UI.Shell.PropertiesSystem;
+using Windows.Devices.Enumeration;
+using Windows.Media.Devices;
 
 namespace BioTap.App.Os;
 
@@ -14,44 +14,42 @@ sealed class WindowsAudio : IAudio
 {
     const string NoName = "Dispositivo sem nome";
 
+    public const string InterfaceSuffix = "#{e6327cad-dcec-4949-ae8a-991e976a79d2}";
+
+    // WinRT enumeration: no raw pointers needed; ids are converted to MMDevice ids
     public IReadOnlyList<AudioDevice> Outputs()
     {
-        var en = (IMMDeviceEnumerator)new MMDeviceEnumerator();
         try
         {
-            en.EnumAudioEndpoints(EDataFlow.eRender, DEVICE_STATE.DEVICE_STATE_ACTIVE, out var coll);
-            try
-            {
-                coll.GetCount(out var count);
-                var list = new List<AudioDevice>();
-                for (uint i = 0; i < count; i++)
-                {
-                    coll.Item(i, out var dev);
-                    try { list.Add(new AudioDevice(IdOf(dev), NameOf(dev))); }
-                    finally { Marshal.FinalReleaseComObject(dev); }
-                }
-                return list;
-            }
-            finally { Marshal.FinalReleaseComObject(coll); }
+            var infos = DeviceInformation.FindAllAsync(MediaDevice.GetAudioRenderSelector()).AsTask().GetAwaiter().GetResult();
+            var list = new List<AudioDevice>();
+            foreach (var info in infos)
+                if (AudioIds.FromWinRt(info.Id) is { } id) list.Add(new AudioDevice(id, string.IsNullOrWhiteSpace(info.Name) ? NoName : info.Name));
+            return list;
         }
-        finally { Marshal.FinalReleaseComObject(en); }
+        catch (Exception e) when (e is COMException or InvalidOperationException) { return []; }
     }
 
     public string? ActiveOutputId()
     {
-        var en = (IMMDeviceEnumerator)new MMDeviceEnumerator();
         try
         {
-            en.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eConsole, out var dev);
-            try { return IdOf(dev); }
-            finally { Marshal.FinalReleaseComObject(dev); }
+            var id = MediaDevice.GetDefaultAudioRenderId(AudioDeviceRole.Default);
+            return string.IsNullOrEmpty(id) ? null : AudioIds.FromWinRt(id);
         }
-        catch (COMException) { return null; } // no default output
-        finally { Marshal.FinalReleaseComObject(en); }
+        catch (Exception e) when (e is COMException or InvalidOperationException) { return null; }
+    }
+
+    /// <summary>Name of a saved device that is not connected now; null when Windows no longer knows it.</summary>
+    public static string? KnownName(string mmId)
+    {
+        try { return DeviceInformation.CreateFromIdAsync(@"\\?\SWD#MMDEVAPI#" + mmId + InterfaceSuffix).AsTask().GetAwaiter().GetResult().Name; }
+        catch (Exception e) when (e is COMException or InvalidOperationException or ArgumentException) { return null; }
     }
 
     public void SetDefaultOutput(string id)
     {
+        // a failure after the first role can leave the three roles on different devices (same message)
         IPolicyConfig? cfg = null;
         try
         {
@@ -78,37 +76,7 @@ sealed class WindowsAudio : IAudio
             }
             finally { Marshal.FinalReleaseComObject(dev); }
         }
-        catch (COMException) { throw new PresetException("Não foi possível mudar o volume"); }
+        catch (Exception e) when (e is COMException or InvalidCastException) { throw new PresetException("Não foi possível mudar o volume"); }
         finally { Marshal.FinalReleaseComObject(en); }
-    }
-
-    static string IdOf(IMMDevice dev)
-    {
-        dev.GetId(out var id);
-        try { return id.ToString(); }
-        finally { Marshal.FreeCoTaskMem(System.Runtime.CompilerServices.Unsafe.As<PWSTR, nint>(ref id)); } // PWSTR is one pointer; no safe accessor
-    }
-
-    static string NameOf(IMMDevice dev)
-    {
-        try
-        {
-            dev.OpenPropertyStore(STGM.STGM_READ, out var store);
-            try
-            {
-                var key = PInvoke.PKEY_Device_FriendlyName;
-                store.GetValue(key, out var pv);
-                try
-                {
-                    Span<char> buf = stackalloc char[256];
-                    PInvoke.PropVariantToString(pv, buf);
-                    var name = buf[..buf.IndexOf('\0')].ToString();
-                    return name.Length > 0 ? name : NoName;
-                }
-                finally { PInvoke.PropVariantClear(ref pv); }
-            }
-            finally { Marshal.FinalReleaseComObject(store); }
-        }
-        catch (Exception e) when (e is COMException or ArgumentException) { return NoName; }
     }
 }

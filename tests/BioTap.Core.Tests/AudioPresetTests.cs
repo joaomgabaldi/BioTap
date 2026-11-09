@@ -91,3 +91,17 @@ public sealed class AudioPresetTests
         Assert.Equal(["Volume:35"], audio.Calls);
     }
 }
+
+public sealed class AudioIdsTests
+{
+    [Fact]
+    public void FromWinRt_ExtractsTheMmDeviceId() => Assert.Equal("{0.0.0.00000000}.{abc-1}",
+        AudioIds.FromWinRt(@"\?\SWD#MMDEVAPI#{0.0.0.00000000}.{abc-1}#{e6327cad-dcec-4949-ae8a-991e976a79d2}"));
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(@"\?\SWD#OTHER#{1}#{2}")]
+    [InlineData(@"\?\SWD#MMDEVAPI#{0.0.0.00000000}.{abc-1}")]
+    [InlineData(@"\?\SWD#MMDEVAPI##{2}")]
+    public void FromWinRt_BadInput_IsNull(string id) => Assert.Null(AudioIds.FromWinRt(id));
+}
