@@ -197,7 +197,15 @@ sealed class SettingsWindow
             icon.Items.Add(new ComboBoxItem { Tag = action.Icon.Value, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = action.Icon.GlyphText() }, new TextBlock { Text = "Atual" } } } });
         icon.SelectedItem = icon.Items.Cast<ComboBoxItem>().First(i => (string)i.Tag == action.Icon.Value);
         var error = new InfoBar { Severity = InfoBarSeverity.Error, IsClosable = false };
-        var fields = PresetEditors.Build(action.Preset, action.Params, window.AppWindow.Id);
+        ContentDialog? dialogRef = null;
+        UIElement? mainContent = null;
+        // A sequence step editor takes over the one dialog; Salvar/Testar stay off so half-edited state is never saved
+        void Swap(UIElement? step)
+        {
+            dialogRef!.Content = step ?? mainContent;
+            dialogRef.IsPrimaryButtonEnabled = dialogRef.IsSecondaryButtonEnabled = step is null;
+        }
+        var fields = PresetEditors.Build(action.Preset, action.Params, window.AppWindow.Id, host.Presets, Swap);
 
         var dialog = new ContentDialog
         {
@@ -209,6 +217,9 @@ sealed class SettingsWindow
             DefaultButton = ContentDialogButton.Primary,
             Content = new ScrollViewer { Content = new StackPanel { Spacing = 12, MinWidth = 460, Children = { error, taps, name, icon, fields.Panel } } },
         };
+
+        dialogRef = dialog;
+        mainContent = dialog.Content as UIElement;
 
         ActionConfig Edited() => action with
         {

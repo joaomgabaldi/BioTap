@@ -12,7 +12,9 @@ namespace BioTap.App.Settings;
 /// <summary>One parameter editor per preset: a panel and a function that reads the params back. No rules here (they live in the presets).</summary>
 static class PresetEditors
 {
-    public static (UIElement Panel, Func<JsonObject> Read) Build(string preset, JsonObject p, WindowId windowId)
+    /// <param name="catalog">Presets a sequence step can use.</param>
+    /// <param name="swap">Replaces the dialog content with a step editor (non-null; Salvar is disabled meanwhile) or restores it (null).</param>
+    public static (UIElement Panel, Func<JsonObject> Read) Build(string preset, JsonObject p, WindowId windowId, PresetCatalog catalog, Action<UIElement?> swap)
     {
         string S(string key) => p[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
         bool B(string key, bool fallback) => p[key] is JsonValue v && v.TryGetValue<bool>(out var b) ? b : fallback;
@@ -27,8 +29,112 @@ static class PresetEditors
             "volumeSet" => VolumeSet(p),
             "openTarget" => OpenTarget(S, windowId),
             "screenshot" => Screenshot(S, B, windowId),
+            "sequence" => Sequence(p, windowId, catalog, swap),
             _ => (new StackPanel(), () => (JsonObject)p.DeepClone()), // no params to edit (copy, paste…); keep whatever is stored
         };
+    }
+
+    /// <summary>One line describing a step's params (never logged: it can hold user text).</summary>
+    public static string Summary(string preset, JsonObject p)
+    {
+        string S(string key) => p[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
+        bool B(string key) => p[key] is JsonValue v && v.TryGetValue<bool>(out var b) && b;
+        int N(string key, int fallback) => p[key] is JsonValue v && v.TryGetValue<int>(out var i) ? i : fallback;
+        switch (preset)
+        {
+            case "shortcut":
+                var parts = new List<string>();
+                if (B("ctrl")) parts.Add("Ctrl");
+                if (B("shift")) parts.Add("Shift");
+                if (B("alt")) parts.Add("Alt");
+                if (B("win")) parts.Add("Win");
+                if (S("key") is { Length: > 0 } k) parts.Add(k);
+                return string.Join(" + ", parts);
+            case "typeText":
+                var t = S("text").ReplaceLineEndings(" ");
+                return t.Length > 30 ? t[..30] + "…" : t;
+            case "openTarget":
+                var target = S("target").Trim();
+                var name = Path.GetFileName(target.TrimEnd('\\', '/'));
+                return name.Length > 0 && !target.Contains("://") ? name : target;
+            case "volumeUp": return $"+{N("step", 10)}%";
+            case "volumeDown": return $"-{N("step", 10)}%";
+            case "volumeSet": return $"{N("percent", 50)}%";
+            case "runCommand": return S("shell");
+            case "screenshot": return S("target") == "window" ? "Janela atual" : "Tela";
+            case "audioCycle": return p["deviceIds"] is JsonArray a ? $"{a.Count} dispositivos" : "";
+            default: return "";
+        }
+    }
+
+    sealed class StepRow(string preset, JsonObject p, int delayMs) { public string Preset = preset; public JsonObject Params = p; public int DelayMs = delayMs; }
+
+    static (UIElement, Func<JsonObject>) Sequence(JsonObject p, WindowId windowId, PresetCatalog catalog, Action<UIElement?> swap)
+    {
+        var rows = new List<StepRow>();
+        if (p["steps"] is JsonArray arr)
+            foreach (var n in arr)
+                if (n is JsonObject o && o["preset"] is JsonValue pv && pv.TryGetValue<string>(out var id))
+                    rows.Add(new StepRow(id, o["params"] is JsonObject po ? (JsonObject)po.DeepClone() : [], o["delayMs"] is JsonValue dv && dv.TryGetValue<int>(out var d) ? d : 0));
+
+        var list = new StackPanel { Spacing = 8 };
+        var add = new DropDownButton { Content = "Adicionar passo", Flyout = new MenuFlyout() };
+        string NameOf(string id) => catalog.Get(id)?.DisplayName ?? id;
+
+        void Edit(StepRow row)
+        {
+            var editor = Build(row.Preset, row.Params, windowId, catalog, swap);
+            var back = new Button { Content = "← Voltar para a sequência" };
+            back.Click += (_, _) => Ui.Run(() =>
+            {
+                row.Params = editor.Read();
+                swap(null);
+                Render();
+            }, "sequence step back");
+            swap(new ScrollViewer { Content = new StackPanel { Spacing = 12, MinWidth = 460, Children = { back, new TextBlock { Text = NameOf(row.Preset), Style = Theme.Style("SubtitleTextBlockStyle") }, editor.Panel } } });
+        }
+
+        void Render()
+        {
+            list.Children.Clear();
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                var at = i;
+                var delay = new NumberBox { Header = "Esperar antes (s)", Minimum = 0, Maximum = 10, Value = row.DelayMs / 1000.0, SmallChange = 0.5, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 160 };
+                delay.ValueChanged += (_, _) => Ui.Run(() => { if (!double.IsNaN(delay.Value)) row.DelayMs = (int)Math.Round(delay.Value * 1000); }, "sequence delay");
+                var edit = new Button { Content = "Editar" };
+                edit.Click += (_, _) => Ui.Run(() => Edit(row), "sequence step edit");
+                var up = new Button { Content = "↑", IsEnabled = i > 0 };
+                up.Click += (_, _) => Ui.Run(() => { (rows[at - 1], rows[at]) = (rows[at], rows[at - 1]); Render(); }, "sequence step up");
+                var down = new Button { Content = "↓", IsEnabled = i < rows.Count - 1 };
+                down.Click += (_, _) => Ui.Run(() => { (rows[at + 1], rows[at]) = (rows[at], rows[at + 1]); Render(); }, "sequence step down");
+                var remove = new Button { Content = "Excluir" };
+                remove.Click += (_, _) => Ui.Run(() => { rows.RemoveAt(at); Render(); }, "sequence step remove");
+                var summary = Summary(row.Preset, row.Params);
+                var title = new StackPanel { Children = { new TextBlock { Text = $"{i + 1}. {NameOf(row.Preset)}" }, new TextBlock { Text = summary, FontSize = 12, Opacity = 0.7, Visibility = summary.Length > 0 ? Visibility.Visible : Visibility.Collapsed } } };
+                list.Children.Add(new StackPanel { Spacing = 4, Children = { title, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Bottom, Children = { delay, edit, up, down, remove } } } });
+            }
+        }
+
+        foreach (var preset in catalog.All.Where(x => x.Id != "sequence"))
+        {
+            var item = new MenuFlyoutItem { Text = preset.DisplayName };
+            item.Click += (_, _) => Ui.Run(() =>
+            {
+                var row = new StepRow(preset.Id, [], 0);
+                rows.Add(row);
+                Render();
+                Edit(row);
+            }, "sequence step add");
+            ((MenuFlyout)add.Flyout).Items.Add(item);
+        }
+        Render();
+
+        return (new StackPanel { Spacing = 12, Children = { new TextBlock { Text = "Passos (1 a 20), em ordem", Opacity = 0.7 }, list, add } }, () => new JsonObject
+        {
+            ["steps"] = new JsonArray([.. rows.Select(r => (JsonNode?)new JsonObject { ["preset"] = r.Preset, ["params"] = r.Params.DeepClone(), ["delayMs"] = r.DelayMs })]),
+        });
     }
 
     static (UIElement, Func<JsonObject>) Screenshot(Func<string, string> S, Func<string, bool, bool> B, WindowId windowId)

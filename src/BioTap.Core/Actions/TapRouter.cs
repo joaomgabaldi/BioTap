@@ -12,7 +12,6 @@ public sealed class PresetException(string userMessage) : Exception(userMessage)
 /// </summary>
 public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, TimeProvider? time = null)
 {
-    static readonly TimeSpan ActionTimeout = TimeSpan.FromSeconds(60);
     readonly TimeProvider clock = time ?? TimeProvider.System;
     readonly ConcurrentDictionary<Guid, byte> running = new();
 
@@ -67,8 +66,9 @@ public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, Tim
                 return;
             }
             Emit(new(OutcomeKind.Ran, action.Name, null, action.Icon)); // feedback as soon as it starts
-            using var cts = new CancellationTokenSource(ActionTimeout, clock);
-            await preset.RunAsync(action.Params, cts.Token).WaitAsync(ActionTimeout, clock);
+            var max = preset.MaxRunTime(action.Params);
+            using var cts = new CancellationTokenSource(max, clock);
+            await preset.RunAsync(action.Params, cts.Token).WaitAsync(max, clock);
         }
         catch (TimeoutException)
         {

@@ -102,6 +102,19 @@ public class TapRouterReviewTests
     }
 
     [Fact]
+    public async Task TapRouter_UsesPresetMaxRunTime()
+    {
+        var time = new FakeTimeProvider();
+        var p = new FakePreset("fake") { Gate = new TaskCompletionSource(), MaxRun = TimeSpan.FromSeconds(120) };
+        Router([p], time, A(1)).OnTaps(1);
+        await WaitUntil(() => p.Runs == 1);
+        for (var i = 0; i < 61; i++) { time.Advance(TimeSpan.FromSeconds(1)); await Task.Delay(2); }
+        Assert.DoesNotContain(outcomes, o => o.Kind == OutcomeKind.Failed);
+        for (var i = 0; i < 70 && !outcomes.Any(o => o.Kind == OutcomeKind.Failed); i++) { time.Advance(TimeSpan.FromSeconds(1)); await Task.Delay(5); }
+        Assert.Equal("Tempo esgotado", outcomes.Single(o => o.Kind == OutcomeKind.Failed).Detail);
+    }
+
+    [Fact]
     public void Catalog_DuplicateIds_NamesTheId()
     {
         var e = Assert.Throws<InvalidOperationException>(() => new PresetCatalog([new FakePreset("x"), new FakePreset("x")]));

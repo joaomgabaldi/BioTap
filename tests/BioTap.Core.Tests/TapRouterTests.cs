@@ -16,11 +16,15 @@ sealed class FakePreset(string id) : IPreset
     public TaskCompletionSource? Gate { get; set; }
     public string? Invalid { get; set; }
     public int Runs;
+    public Action? OnRun { get; set; }
+    public TimeSpan? MaxRun { get; set; }
+    public TimeSpan MaxRunTime(JsonObject p) => MaxRun ?? TimeSpan.FromSeconds(60);
     public string? ValidateParams(JsonObject p) => Invalid;
     public string? CheckReady(JsonObject p) => NotReady;
     public async Task RunAsync(JsonObject p, CancellationToken ct)
     {
         Interlocked.Increment(ref Runs);
+        OnRun?.Invoke();
         if (Gate is not null) await Gate.Task;
         if (Throws is not null) throw Throws;
     }
