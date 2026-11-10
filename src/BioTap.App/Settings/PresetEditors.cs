@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.Windows.Storage.Pickers;
+using BioTap.Core.Text;
 
 namespace BioTap.App.Settings;
 
@@ -48,7 +49,7 @@ static class PresetEditors
                 if (B("shift")) parts.Add("Shift");
                 if (B("alt")) parts.Add("Alt");
                 if (B("win")) parts.Add("Win");
-                if (S("key") is { Length: > 0 } k) parts.Add(k);
+                if (S("key") is { Length: > 0 } k) parts.Add(Strings.Current.KeyName(k));
                 return string.Join(" + ", parts);
             case "typeText":
                 var t = S("text").ReplaceLineEndings(" ");
@@ -61,8 +62,8 @@ static class PresetEditors
             case "volumeDown": return $"-{N("step", 10)}%";
             case "volumeSet": return $"{N("percent", 50)}%";
             case "runCommand": return S("shell");
-            case "screenshot": return S("target") == "window" ? "Janela atual" : "Tela";
-            case "audioCycle": return p["deviceIds"] is JsonArray a ? $"{a.Count} dispositivos" : "";
+            case "screenshot": return S("target") == "window" ? Strings.Current.CurrentWindow : Strings.Current.Screen;
+            case "audioCycle": return p["deviceIds"] is JsonArray a ? Strings.Current.DevicesCount(a.Count) : "";
             default: return "";
         }
     }
@@ -78,13 +79,13 @@ static class PresetEditors
                     rows.Add(new StepRow(id, o["params"] is JsonObject po ? (JsonObject)po.DeepClone() : [], o["delayMs"] is JsonValue dv && dv.TryGetValue<int>(out var d) ? d : 0));
 
         var list = new StackPanel { Spacing = 8 };
-        var add = new DropDownButton { Content = "Adicionar passo", Flyout = new MenuFlyout() };
+        var add = new DropDownButton { Content = Strings.Current.AddStep, Flyout = new MenuFlyout() };
         string NameOf(string id) => catalog.Get(id)?.DisplayName ?? id;
 
         void Edit(StepRow row)
         {
             var editor = Build(row.Preset, row.Params, windowId, catalog, swap);
-            var back = new Button { Content = "← Voltar para a sequência" };
+            var back = new Button { Content = Strings.Current.BackToSequence };
             back.Click += (_, _) => Ui.Run(() =>
             {
                 row.Params = editor.Read();
@@ -102,15 +103,15 @@ static class PresetEditors
             {
                 var row = rows[i];
                 var at = i;
-                var delay = new NumberBox { Header = "Esperar antes (s)", Minimum = 0, Maximum = 10, Value = row.DelayMs / 1000.0, SmallChange = 0.5, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 160 };
+                var delay = new NumberBox { Header = Strings.Current.WaitBefore, Minimum = 0, Maximum = 10, Value = row.DelayMs / 1000.0, SmallChange = 0.5, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 160 };
                 delay.ValueChanged += (_, _) => Ui.Run(() => { if (!double.IsNaN(delay.Value)) row.DelayMs = (int)Math.Round(delay.Value * 1000); }, "sequence delay");
-                var edit = new Button { Content = "Editar", IsEnabled = row.Preset != "sequence" }; // a hand-edited nested sequence can only be deleted
+                var edit = new Button { Content = Strings.Current.Edit, IsEnabled = row.Preset != "sequence" }; // a hand-edited nested sequence can only be deleted
                 edit.Click += (_, _) => Ui.Run(() => Edit(row), "sequence step edit");
                 var up = new Button { Content = "↑", IsEnabled = i > 0 };
                 up.Click += (_, _) => Ui.Run(() => { (rows[at - 1], rows[at]) = (rows[at], rows[at - 1]); Render(); }, "sequence step up");
                 var down = new Button { Content = "↓", IsEnabled = i < rows.Count - 1 };
                 down.Click += (_, _) => Ui.Run(() => { (rows[at + 1], rows[at]) = (rows[at], rows[at + 1]); Render(); }, "sequence step down");
-                var remove = new Button { Content = "Excluir" };
+                var remove = new Button { Content = Strings.Current.Delete };
                 remove.Click += (_, _) => Ui.Run(() => { rows.RemoveAt(at); Render(); }, "sequence step remove");
                 var summary = Summary(row.Preset, row.Params);
                 var title = new StackPanel { Children = { new TextBlock { Text = $"{i + 1}. {NameOf(row.Preset)}" }, new TextBlock { Text = summary, FontSize = 12, Opacity = 0.7, Visibility = summary.Length > 0 ? Visibility.Visible : Visibility.Collapsed } } };
@@ -132,7 +133,7 @@ static class PresetEditors
         }
         Render();
 
-        return (new StackPanel { Spacing = 12, Children = { new TextBlock { Text = "Passos (1 a 20), em ordem", Opacity = 0.7 }, list, add } }, () => new JsonObject
+        return (new StackPanel { Spacing = 12, Children = { new TextBlock { Text = Strings.Current.StepsHeader, Opacity = 0.7 }, list, add } }, () => new JsonObject
         {
             ["steps"] = new JsonArray([.. rows.Select(r => (JsonNode?)new JsonObject { ["preset"] = r.Preset, ["params"] = r.Params.DeepClone(), ["delayMs"] = r.DelayMs })]),
         });
@@ -141,9 +142,9 @@ static class PresetEditors
     static (UIElement, Func<JsonObject>) Screenshot(Func<string, string> S, Func<string, bool, bool> B, WindowId windowId)
     {
         // A new action has no params yet: show the defaults; Read writes them all
-        var target = new RadioButtons { Header = "O que capturar", Items = { "Tela", "Janela atual" }, SelectedIndex = S("target") == "window" ? 1 : 0 };
-        var save = new CheckBox { Content = "Salvar em uma pasta", IsChecked = B("save", true) };
-        var folder = new TextBox { Header = "Pasta", Text = S("folder") is { Length: > 0 } f ? f : ScreenshotPreset.DefaultFolder };
+        var target = new RadioButtons { Header = Strings.Current.WhatToCapture, Items = { Strings.Current.Screen, Strings.Current.CurrentWindow }, SelectedIndex = S("target") == "window" ? 1 : 0 };
+        var save = new CheckBox { Content = Strings.Current.SaveToFolder, IsChecked = B("save", true) };
+        var folder = new TextBox { Header = Strings.Current.Folder, Text = S("folder") is { Length: > 0 } f ? f : ScreenshotPreset.DefaultFolder };
         var browse = new Button { Content = "Procurar…" };
         browse.Click += (_, _) => Ui.RunAsync(async () =>
         {
@@ -161,7 +162,7 @@ static class PresetEditors
         save.Checked += (_, _) => Ui.Run(Sync, "screenshot save toggle");
         save.Unchecked += (_, _) => Ui.Run(Sync, "screenshot save toggle");
         Sync();
-        var copy = new CheckBox { Content = "Copiar para a área de transferência", IsChecked = B("copy", true) };
+        var copy = new CheckBox { Content = Strings.Current.CopyToClipboard, IsChecked = B("copy", true) };
         return (new StackPanel { Spacing = 12, Children = { target, save, PathRow(folder, browse), copy } }, () => new JsonObject
         {
             ["target"] = target.SelectedIndex == 1 ? "window" : "screen", ["save"] = save.IsChecked == true,
@@ -172,9 +173,9 @@ static class PresetEditors
     static (UIElement, Func<JsonObject>) RunCommand(Func<string, string> S, Func<string, bool, bool> B)
     {
         var shell = new ComboBox { Header = "Shell", Items = { "powershell", "cmd" }, SelectedItem = S("shell") == "cmd" ? "cmd" : "powershell" };
-        var command = new TextBox { Header = "Comando", Text = S("command"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 90, FontFamily = new FontFamily("Cascadia Mono, Consolas") };
-        var show = new ToggleSwitch { Header = "Mostrar janela", IsOn = B("showWindow", true) };
-        var admin = new ToggleSwitch { Header = "Executar como administrador", IsOn = B("runAsAdmin", false) };
+        var command = new TextBox { Header = Strings.Current.Command, Text = S("command"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 90, FontFamily = new FontFamily("Cascadia Mono, Consolas") };
+        var show = new ToggleSwitch { Header = Strings.Current.ShowWindow, IsOn = B("showWindow", true) };
+        var admin = new ToggleSwitch { Header = Strings.Current.RunAsAdmin, IsOn = B("runAsAdmin", false) };
         return (new StackPanel { Spacing = 12, Children = { shell, command, show, admin } }, () => new JsonObject
         {
             ["shell"] = (string)shell.SelectedItem, ["command"] = command.Text, ["showWindow"] = show.IsOn, ["runAsAdmin"] = admin.IsOn,
@@ -183,7 +184,7 @@ static class PresetEditors
 
     static (UIElement, Func<JsonObject>) OpenTarget(Func<string, string> S, WindowId windowId)
     {
-        var target = new TextBox { Header = "Programa, arquivo ou URL", Text = S("target"), PlaceholderText = @"C:\Program Files\...\app.exe  ou  https://..." };
+        var target = new TextBox { Header = Strings.Current.OpenTargetHeader, Text = S("target"), PlaceholderText = Strings.Current.OpenTargetPlaceholder };
         var browse = new Button { Content = "Procurar…" };
         browse.Click += (_, _) => Ui.RunAsync(async () =>
         {
@@ -199,7 +200,7 @@ static class PresetEditors
                 Program.Log.Write("ERROR", "File picker: " + e.GetType().Name);
             }
         }, "file picker");
-        var args = new TextBox { Header = "Argumentos (opcional)", Text = S("args") };
+        var args = new TextBox { Header = Strings.Current.ArgsOptional, Text = S("args") };
         return (new StackPanel { Spacing = 12, Children = { PathRow(target, browse), args } }, () =>
         {
             var o = new JsonObject { ["target"] = target.Text.Trim() };
@@ -225,9 +226,10 @@ static class PresetEditors
         var alt = new CheckBox { Content = "Alt", IsChecked = B("alt", false) };
         var shift = new CheckBox { Content = "Shift", IsChecked = B("shift", false) };
         var win = new CheckBox { Content = "Win", IsChecked = B("win", false) };
-        var key = new ComboBox { Header = "Tecla", MinWidth = 160 };
-        foreach (var name in ShortcutKeys.All.Keys) key.Items.Add(name);
-        key.SelectedItem = ShortcutKeys.All.ContainsKey(S("key")) ? S("key") : null;
+        // The item's Tag is the key id saved in config.json; only the text shown is translated
+        var key = new ComboBox { Header = Strings.Current.Key, MinWidth = 160 };
+        foreach (var name in ShortcutKeys.All.Keys) key.Items.Add(new ComboBoxItem { Content = Strings.Current.KeyName(name), Tag = name });
+        key.SelectedItem = key.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S("key"));
         var preview = new TextBlock { Opacity = 0.7 };
 
         void Refresh()
@@ -237,7 +239,7 @@ static class PresetEditors
             if (shift.IsChecked == true) parts.Add("Shift");
             if (alt.IsChecked == true) parts.Add("Alt");
             if (win.IsChecked == true) parts.Add("Win");
-            if (key.SelectedItem is string k) parts.Add(k);
+            if (key.SelectedItem is ComboBoxItem { Tag: string k }) parts.Add(Strings.Current.KeyName(k));
             preview.Text = string.Join(" + ", parts);
         }
         foreach (var c in new[] { ctrl, alt, shift, win })
@@ -252,7 +254,7 @@ static class PresetEditors
         return (new StackPanel { Spacing = 12, Children = { mods, key, preview } }, () =>
         {
             var o = new JsonObject { ["ctrl"] = ctrl.IsChecked == true, ["alt"] = alt.IsChecked == true, ["shift"] = shift.IsChecked == true, ["win"] = win.IsChecked == true };
-            if (key.SelectedItem is string k) o["key"] = k;
+            if (key.SelectedItem is ComboBoxItem { Tag: string k }) o["key"] = k;
             return o;
         });
     }
@@ -260,15 +262,15 @@ static class PresetEditors
     static (UIElement, Func<JsonObject>) VolumeStep(JsonObject p)
     {
         var current = p["step"] is JsonValue v && v.TryGetValue<int>(out var s) ? s : 10;
-        var step = new NumberBox { Header = "Passo do volume (%)", Minimum = 2, Maximum = 50, Value = current, SmallChange = 2, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left };
+        var step = new NumberBox { Header = Strings.Current.VolumeStep, Minimum = 2, Maximum = 50, Value = current, SmallChange = 2, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left };
         return (step, () => double.IsNaN(step.Value) ? new JsonObject() : new JsonObject { ["step"] = (int)Math.Round(step.Value) });
     }
 
     static (UIElement, Func<JsonObject>) TypeText(string text)
     {
-        var box = new TextBox { Header = "Texto", Text = text, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 120, MaxLength = 10_000 };
+        var box = new TextBox { Header = Strings.Current.TextHeader, Text = text, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 120, MaxLength = 10_000 };
         var counter = new TextBlock { Opacity = 0.7 };
-        void Refresh() => counter.Text = $"{box.Text.Length} / 10.000";
+        void Refresh() => counter.Text = Strings.Current.TextCounter(box.Text.Length);
         box.TextChanged += (_, _) => Ui.Run(Refresh, "text counter");
         Refresh();
         return (new StackPanel { Spacing = 4, Children = { box, counter } }, () => new JsonObject { ["text"] = box.Text });
@@ -293,13 +295,13 @@ static class PresetEditors
         {
             present = [.. new Os.WindowsAudio().Outputs()];
             // saved ones first, in their saved order (also when unplugged), then the other connected devices
-            rows = saved.Select(id => present.FirstOrDefault(d => d.Id == id) is { } d ? new AudioRow(id, d.Name, true) : new AudioRow(id, (Os.WindowsAudio.KnownName(id) ?? "Dispositivo desconhecido") + " (desconectado)", true)).ToList();
+            rows = saved.Select(id => present.FirstOrDefault(d => d.Id == id) is { } d ? new AudioRow(id, d.Name, true) : new AudioRow(id, (Os.WindowsAudio.KnownName(id) ?? Strings.Current.UnknownDevice) + " (" + Strings.Current.DisconnectedSuffix + ")", true)).ToList();
             rows.AddRange(present.Where(d => !saved.Contains(d.Id)).Select(d => new AudioRow(d.Id, d.Name, false)));
         }
         catch (Exception e)
         {
             Program.Log.Write("ERROR", "Audio list: " + e.GetType().Name);
-            panel.Children.Add(new TextBlock { Text = "Não foi possível listar os dispositivos" });
+            panel.Children.Add(new TextBlock { Text = Strings.Current.CannotListDevices });
             return (panel, () => (JsonObject)p.DeepClone()); // keep whatever is stored
         }
 

@@ -59,6 +59,7 @@ public class BoundaryTests
     // Spec da tradução §7: texto visível em português só nas classes de idioma (Core/Text). Logs ficam em português.
     [Theory]
     [InlineData("BioTap.Core")]
+    [InlineData("BioTap.App")]
     public void UserVisibleText_IsInStringsOnly(string project)
     {
         var root = Path.Combine(RepoRoot(), "src", project);
@@ -79,6 +80,18 @@ public class BoundaryTests
             }
         }
         Assert.True(offenders.Count == 0, string.Join(Environment.NewLine, offenders));
+    }
+
+    // Spec da tradução §6: o idioma do instalador vem só de HKLM (um processo sem admin não escreve lá)
+    [Fact]
+    public void InstallerLanguage_ReadsOnlyHklm()
+    {
+        var src = Path.Combine(RepoRoot(), "src");
+        var code = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .Select(File.ReadAllText).ToList();
+        Assert.DoesNotContain(code, c => c.Contains("Registry.CurrentUser") || c.Contains("RegistryHive.CurrentUser"));
+        Assert.Contains(code, c => c.Contains("""Registry.LocalMachine.OpenSubKey(@"Software\BioTap")"""));
     }
 
     [Fact]

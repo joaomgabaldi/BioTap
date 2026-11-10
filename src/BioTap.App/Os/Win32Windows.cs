@@ -4,6 +4,7 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Dwm;
 using Windows.Win32.UI.WindowsAndMessaging;
+using BioTap.Core.Text;
 
 namespace BioTap.App.Os;
 
@@ -25,7 +26,7 @@ sealed class Win32Windows : IWindows
         var topmost = (PInvoke.GetWindowLong(h, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE) & (int)WINDOW_EX_STYLE.WS_EX_TOPMOST) != 0;
         if (!PInvoke.SetWindowPos(h, (HWND)new IntPtr(topmost ? -2 : -1), 0, 0, 0, 0,
             SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE))
-            throw new PresetException("Não foi possível alterar a janela"); // e.g. UIPI on a higher-integrity window
+            throw new PresetException(Strings.Current.WindowChangeFailed); // e.g. UIPI on a higher-integrity window
     }
 
     public void MinimizeAllExcept(nint window)

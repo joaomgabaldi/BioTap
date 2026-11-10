@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using BioTap.Core.Actions;
 using Windows.Win32;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
+using BioTap.Core.Text;
 
 namespace BioTap.App.Os;
 
@@ -64,6 +65,6 @@ sealed class SendInputKeyboard : IKeyboard
     {
         if (inputs.Count == 0) return;
         var sent = PInvoke.SendInput(inputs.ToArray(), Marshal.SizeOf<INPUT>());
-        if (sent != inputs.Count) throw new PresetException("O Windows bloqueou o envio de teclas.");
+        if (sent != inputs.Count) throw new PresetException(Strings.Current.KeysBlocked);
     }
 }

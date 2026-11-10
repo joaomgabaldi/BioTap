@@ -5,6 +5,7 @@ using BioTap.Core;
 using BioTap.Core.Actions;
 using BioTap.Core.Config;
 using Microsoft.UI.Dispatching;
+using BioTap.Core.Text;
 
 namespace BioTap.App;
 
@@ -95,7 +96,7 @@ sealed class AppHost(DispatcherQueue ui)
         _ = connection.RunAsync(stop.Token);
 
         UpdateTray();
-        if (loaded.Errors.Count > 0) tray.Notify("BioTap: configuração", loaded.Errors[0]);
+        if (loaded.Errors.Count > 0) tray.Notify(Strings.Current.NotifyConfigTitle, loaded.Errors[0]);
     }
 
     const string PipeServerName = "BioTap";
@@ -105,6 +106,26 @@ sealed class AppHost(DispatcherQueue ui)
     {
         loaded = ConfigStore.Load(configPath, AclGuard.IsWritableOnlyByAdmins, presets);
         foreach (var e in loaded.Errors) Program.Log.Write("WARN", "Config: " + e);
+        var before = Strings.Current;
+        Program.ApplyLanguage(loaded.Config.Language);
+        if (Strings.Current != before && tray is not null) LanguageChanged();
+    }
+
+    /// <summary>Spec da tradução §4: a bandeja muda na hora; as preferências reabrem já no novo idioma; o resto ao reaparecer.</summary>
+    void LanguageChanged()
+    {
+        Program.Log.Write("INFO", "Idioma: " + LanguageChoice.Code(Strings.Current.Language));
+        tray.Relabel();
+        UpdateTray();
+        if (settings is null) return;
+        // Depois do clique em Salvar terminar: fechar a janela dentro do próprio evento dela não é seguro
+        ui.TryEnqueue(() => Shell.Ui.Run(() =>
+        {
+            var old = settings;
+            settings = null;
+            old?.Close();
+            OpenSettings();
+        }, "reopen settings"));
     }
 
     /// <summary>One preferences window; reopened after it is closed.</summary>
@@ -114,8 +135,9 @@ sealed class AppHost(DispatcherQueue ui)
         {
             if (settings is null)
             {
-                settings = new Settings.SettingsWindow(this);
-                settings.Closed += () => settings = null;
+                var opened = new Settings.SettingsWindow(this);
+                opened.Closed += () => { if (settings == opened) settings = null; };
+                settings = opened;
             }
             settings.Show();
         }
@@ -124,7 +146,7 @@ sealed class AppHost(DispatcherQueue ui)
             // A broken preferences window must never take the tray app (and so the taps) down with it
             Program.Log.Write("ERROR", $"Open settings: {e}");
             settings = null;
-            tray.Notify("BioTap", "Não foi possível abrir as preferências.");
+            tray.Notify("BioTap", Strings.Current.CannotOpenSettings);
         }
     }
 

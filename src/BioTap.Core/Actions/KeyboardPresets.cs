@@ -73,7 +73,7 @@ public sealed class VolumeStepPreset(IKeyboard kb, bool up) : IPreset
     public IconRef DefaultIcon => new("glyph", up ? "E995" : "E993");
 
     public string? ValidateParams(JsonObject p)
-        => Params.Int(p, "step") is >= 2 and <= 50 and var s && s % 2 == 0 ? null : "Escolha um passo par de 2 a 50%.";
+        => Params.Int(p, "step") is >= 2 and <= 50 and var s && s % 2 == 0 ? null : Strings.Current.VolumeStepRange;
 
     public string? CheckReady(JsonObject p) => null;
 

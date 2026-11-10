@@ -121,7 +121,7 @@ public sealed class ScreenshotPreset(IScreenCapture capture, IWindows windows, F
 
     public string? ValidateParams(JsonObject p)
     {
-        if (Target(p) is not ("screen" or "window")) return "Escolha Tela ou Janela atual.";
+        if (Target(p) is not ("screen" or "window")) return Strings.Current.ShotChooseTarget;
         if (!Save(p) && !Copy(p)) return Strings.Current.ShotSaveOrCopy;
         if (Save(p))
         {
