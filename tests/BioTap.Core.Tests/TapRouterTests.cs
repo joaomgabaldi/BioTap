@@ -20,6 +20,7 @@ sealed class FakePreset(string id) : IPreset
     public bool HangUntilCancelled { get; set; }
     public CancellationToken Seen;
     public TimeSpan? MaxRun { get; set; }
+    public bool SystemFeedback { get; set; }
     public TimeSpan MaxRunTime(JsonObject p) => MaxRun ?? TimeSpan.FromSeconds(60);
     public string? ValidateParams(JsonObject p) => Invalid;
     public string? CheckReady(JsonObject p) => NotReady;
@@ -65,6 +66,22 @@ public class TapRouterTests
         Assert.Equal("Dois", o.Title);
         Assert.Equal(new IconRef("glyph", "E70B"), o.Icon);
         await WaitUntil(() => preset.Runs == 1);
+    }
+
+    [Fact]
+    public async Task Route_SystemFeedback_NoRanButFailureStillShown()
+    {
+        preset.SystemFeedback = true; // o Windows já mostra o volume na tela
+        var r = Router(A(1));
+        r.OnTaps(1);
+        await WaitUntil(() => preset.Runs == 1);
+        await Task.Delay(50);
+        Assert.Empty(outcomes);
+
+        preset.Throws = new InvalidOperationException("falhou");
+        r.OnTaps(1);
+        await WaitUntil(() => outcomes.Any(o => o.Kind == OutcomeKind.Failed));
+        Assert.DoesNotContain(outcomes, o => o.Kind == OutcomeKind.Ran);
     }
 
     [Fact]

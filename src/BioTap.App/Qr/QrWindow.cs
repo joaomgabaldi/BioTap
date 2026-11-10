@@ -30,8 +30,8 @@ sealed class QrWindow(DispatcherQueue ui) : IQrWindow
     Image? image;
     TextBlock? caption;
     HWND hwnd;
-    bool visible, clickCloses;
-    DispatcherQueueTimer? timer;
+    bool visible, clickCloses, wasPressed;
+    DispatcherQueueTimer? timer, watch;
 
     public Task ShowAsync(string text, CancellationToken abandon)
     {
@@ -82,8 +82,26 @@ sealed class QrWindow(DispatcherQueue ui) : IQrWindow
         visible = true; // before Activate: its Deactivated event must be able to hide the window
         window.Activate(); // takes focus so Esc and click-outside close it
         clickCloses = !Focus();
+        // Without focus there is no Deactivated, and a click on the window that stays in front changes nothing:
+        // any new mouse press outside the QR (any monitor, any window) closes it
+        wasPressed = Pressed();
         timer!.Stop();
         timer.Start(); // restarted on each Show
+        watch!.Start();
+    }
+
+    static bool Pressed() => PInvoke.GetAsyncKeyState(0x01) < 0 || PInvoke.GetAsyncKeyState(0x02) < 0 || PInvoke.GetAsyncKeyState(0x04) < 0; // L, R, middle
+
+    void Watch()
+    {
+        var pressed = Pressed();
+        var press = pressed && !wasPressed; // a button held since before the QR appeared does not count
+        wasPressed = pressed;
+        if (!press) return;
+        var p = Cursor();
+        var at = window!.AppWindow.Position;
+        var size = window.AppWindow.Size;
+        if (p.X < at.X || p.Y < at.Y || p.X >= at.X + size.Width || p.Y >= at.Y + size.Height) Hide();
     }
 
     /// <summary>SetForegroundWindow, then (if refused) once more attached to the foreground window's input thread.</summary>
@@ -127,6 +145,9 @@ sealed class QrWindow(DispatcherQueue ui) : IQrWindow
         timer.Interval = TimeSpan.FromSeconds(30);
         timer.IsRepeating = false;
         timer.Tick += (_, _) => Ui.Run(Hide, "qr timeout");
+        watch = ui.CreateTimer();
+        watch.Interval = TimeSpan.FromMilliseconds(30);
+        watch.Tick += (_, _) => Ui.Run(Watch, "qr watch");
     }
 
     void Hide()
@@ -134,6 +155,7 @@ sealed class QrWindow(DispatcherQueue ui) : IQrWindow
         if (!visible) return;
         visible = false;
         timer?.Stop();
+        watch?.Stop();
         window!.AppWindow.Hide();
     }
 

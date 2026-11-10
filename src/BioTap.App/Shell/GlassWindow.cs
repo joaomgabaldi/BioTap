@@ -108,6 +108,12 @@ sealed class GlassWindow
     public void Show(RectInt32 bounds, double scale, bool activate)
     {
         frame = MeasureFrame();
+        // Measured: the pill lost WS_EX_TOPMOST mid-session (after the QR window) and then rose behind a maximized window,
+        // unseen. Back to the top of the topmost band on every show; also above windows pinned by "Sempre no topo".
+        if ((PInvoke.GetWindowLong(Hwnd, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE) & (int)WINDOW_EX_STYLE.WS_EX_TOPMOST) == 0)
+            Program.Log.Write("WARN", "glass window lost always-on-top; restored");
+        _ = PInvoke.SetWindowPos(Hwnd, (HWND)new IntPtr(-1), 0, 0, 0, 0, // HWND_TOPMOST
+            SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
         // A pending exit is cancelled; whatever was waiting for it (an action clicked in the panel) still runs
         var pending = hidden;
         hidden = null;

@@ -20,6 +20,8 @@ public interface IPreset
     Task RunAsync(JsonObject p, CancellationToken ct);
     /// <summary>Time the router lets this run before giving up.</summary>
     TimeSpan MaxRunTime(JsonObject p) => TimeSpan.FromSeconds(60);
+    /// <summary>Windows already shows the result (volume/mute flyout): no confirmation on success, errors still show.</summary>
+    bool SystemFeedback => false;
 }
 
 public sealed class PresetCatalog(IEnumerable<IPreset> presets) : IPresetCatalog

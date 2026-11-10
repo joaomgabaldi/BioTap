@@ -42,3 +42,4 @@ DestroyIcon
 DwmSetWindowAttribute
 DWM_WINDOW_CORNER_PREFERENCE
 ClientToScreen
+GetAsyncKeyState

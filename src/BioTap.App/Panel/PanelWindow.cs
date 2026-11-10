@@ -20,6 +20,7 @@ sealed class PanelWindow
     readonly Grid root;
     readonly StackPanel row = new() { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
     long lastHideTick;
+    int shows;
 
     public event Action<Guid>? ItemClicked;
     public event Action? GearClicked;
@@ -44,6 +45,7 @@ sealed class PanelWindow
 
     public void Show(IReadOnlyList<PanelItem> items)
     {
+        shows++;
         row.Children.Clear();
         if (items.Count == 0)
             row.Children.Add(new TextBlock { Text = PanelModel.EmptyText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0), Foreground = Theme.Res("BioTapTextMutedBrush") });
@@ -98,6 +100,8 @@ sealed class PanelWindow
         if (!glass.IsShown) return;
         lastHideTick = Environment.TickCount64;
         root.IsHitTestVisible = false; // no second click while it leaves
-        glass.Hide(done is null ? null : () => Ui.Run(done, "panel hidden"));
+        // Reopened during the exit: GlassWindow still calls done, but a clicked action would then act on the panel itself
+        var shown = shows;
+        glass.Hide(done is null ? null : () => Ui.Run(() => { if (shown == shows) done(); }, "panel hidden"));
     }
 }

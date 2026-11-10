@@ -8,7 +8,7 @@ public sealed class PresetException(string userMessage) : Exception(userMessage)
 
 /// <summary>
 /// Turns "N taps" into the configured action. Never blocks or throws to the caller: actions run on the pool,
-/// with a timeout. The same action never runs twice at once. Outcomes: Ran when it starts, then Failed if it fails.
+/// with a timeout. The same action never runs twice at once. Outcomes: Ran when it starts (not for presets whose result Windows shows itself), then Failed if it fails.
 /// </summary>
 public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, TimeProvider? time = null)
 {
@@ -65,7 +65,7 @@ public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, Tim
                 Emit(new(OutcomeKind.Blocked, action.Name, reason, action.Icon));
                 return;
             }
-            Emit(new(OutcomeKind.Ran, action.Name, null, action.Icon)); // feedback as soon as it starts
+            if (!preset.SystemFeedback) Emit(new(OutcomeKind.Ran, action.Name, null, action.Icon)); // feedback as soon as it starts
             var max = preset.MaxRunTime(action.Params);
             using var cts = new CancellationTokenSource(max, clock);
             await preset.RunAsync(action.Params, cts.Token).WaitAsync(max, clock);

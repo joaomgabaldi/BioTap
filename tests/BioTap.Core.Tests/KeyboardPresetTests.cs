@@ -36,6 +36,15 @@ public sealed class KeyboardPresetTests
     }
 
     [Fact]
+    public void SystemFeedback_OnlyVolumeAndMute()
+    {
+        IPreset[] own = [new KeyPreset("mute", "m", "E74F", kb, Vk.VolumeMute), new VolumeStepPreset(kb, up: true), new VolumeStepPreset(kb, up: false)];
+        IPreset[] pill = [new KeyPreset("playPause", "p", "E768", kb, Vk.MediaPlayPause), new KeyPreset("copy", "c", "E8C8", kb, Vk.Control, 0x43), new ShortcutPreset(kb)];
+        Assert.All(own, p => Assert.True(p.SystemFeedback));
+        Assert.All(pill, p => Assert.False(p.SystemFeedback));
+    }
+
+    [Fact]
     public void Shortcut_Validate_WinL_Refused()
         => Assert.Equal("O Windows não deixa enviar Win+L. Use o preset Bloquear o Windows.",
             new ShortcutPreset(kb).ValidateParams(new JsonObject { ["win"] = true, ["key"] = "L" }));

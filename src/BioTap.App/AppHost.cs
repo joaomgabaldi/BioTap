@@ -68,7 +68,7 @@ sealed class AppHost(DispatcherQueue ui)
         overlay = new OverlayWindow();
         panel = new PanelWindow();
         // Mesmo caminho de um toque; o painel já se escondeu, então presets de janela agem na janela que estava na frente
-        panel.ItemClicked += id => { if (loaded.Config.Actions.FirstOrDefault(a => a.Id == id) is { } a) router.Test(a); };
+        panel.ItemClicked += id => { if (loaded.Config.Actions.FirstOrDefault(a => a.Id == id && a.Enabled) is { } a) router.Test(a); };
         panel.GearClicked += OpenSettings;
 
         tray = new TrayIcon();

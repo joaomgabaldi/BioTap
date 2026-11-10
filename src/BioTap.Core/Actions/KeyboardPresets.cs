@@ -52,6 +52,7 @@ public sealed class KeyPreset(string id, string name, string glyph, IKeyboard kb
     public string Id => id;
     public string DisplayName => name;
     public IconRef DefaultIcon => new("glyph", glyph);
+    public bool SystemFeedback => keys is [Vk.VolumeMute];
     public string? ValidateParams(JsonObject p) => null;
     public string? CheckReady(JsonObject p) => null;
 
@@ -66,6 +67,7 @@ public sealed class KeyPreset(string id, string name, string glyph, IKeyboard kb
 public sealed class VolumeStepPreset(IKeyboard kb, bool up) : IPreset
 {
     public string Id => up ? "volumeUp" : "volumeDown";
+    public bool SystemFeedback => true;
     public string DisplayName => up ? "Aumentar volume" : "Diminuir volume";
     public IconRef DefaultIcon => new("glyph", up ? "E995" : "E993");
 
