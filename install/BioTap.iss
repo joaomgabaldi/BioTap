@@ -45,7 +45,8 @@ Type: filesandordirs; Name: "{app}\App"
 Type: filesandordirs; Name: "{app}\runtimes"
 
 [Files]
-Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Sem PDBs: guardam o caminho local da máquina de build (mapa do SourceLink)
+Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

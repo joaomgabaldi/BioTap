@@ -6,5 +6,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Release vai para o instalador público: os binários não levam o caminho local da máquina de build -->
+    <PathMap Condition="'$(Configuration)' == 'Release'">$(MSBuildThisFileDirectory)=/_/</PathMap>
   </PropertyGroup>
 </Project>
