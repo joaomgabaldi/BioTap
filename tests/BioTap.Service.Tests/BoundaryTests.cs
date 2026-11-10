@@ -82,6 +82,21 @@ public class BoundaryTests
         Assert.True(offenders.Count == 0, string.Join(Environment.NewLine, offenders));
     }
 
+    // Revisão final: um texto traduzido que ninguém usa quer dizer que a tela ainda mostra o texto fixo antigo
+    [Fact]
+    public void EveryTranslatedText_IsUsed()
+    {
+        var src = Path.Combine(RepoRoot(), "src");
+        var code = string.Join("\n", Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}Text{Path.DirectorySeparatorChar}"))
+            .Select(File.ReadAllText));
+        var strings = typeof(BioTap.Core.Text.Strings);
+        var names = strings.GetProperties().Select(p => p.Name).Concat(strings.GetMethods().Where(m => !m.IsSpecialName && m.DeclaringType == strings).Select(m => m.Name))
+            .Where(n => n is not ("Current" or "Language" or "For")).Distinct();
+        var unused = names.Where(n => !System.Text.RegularExpressions.Regex.IsMatch(code, $@"\.{n}\b")).ToList();
+        Assert.True(unused.Count == 0, "Sem uso: " + string.Join(", ", unused));
+    }
+
     // Spec da tradução §6: o idioma do instalador vem só de HKLM (um processo sem admin não escreve lá)
     [Fact]
     public void InstallerLanguage_ReadsOnlyHklm()

@@ -152,14 +152,15 @@ sealed class SettingsWindow
 
     readonly TaskCompletionSource loaded = new();
 
-    public async void Show()
+    /// <param name="page">Tag da página a abrir ("general"...) quando a janela é nova; null = a primeira.</param>
+    public async void Show(string? page = null)
     {
         try
         {
             window.Activate();
             PInvoke.SetForegroundWindow(hwnd);
             await loaded.Task; // completes after the first Activate puts the content on screen
-            if (nav.SelectedItem is null) nav.SelectedItem = nav.MenuItems[0];
+            if (nav.SelectedItem is null) nav.SelectedItem = nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (string)i.Tag == page) ?? nav.MenuItems[0];
             if (dialogOpen) return; // an editor is already open: just bring the window up
             saved = host.Loaded.Config; // pick up a config reloaded since this window was built
         }
@@ -642,7 +643,8 @@ sealed class SettingsWindow
 
         var save = SaveButton();
         int Read() => double.IsNaN(timeout.Value) ? saved.TapTimeoutMs : (int)Math.Round(timeout.Value);
-        string ReadLanguage() => LanguageChoice.Code((Language)((ComboBoxItem)language.SelectedItem).Tag);
+        // Sem mudança no seletor, o config.json continua sem idioma (o do instalador segue valendo numa reinstalação)
+        string? ReadLanguage() => (Language)((ComboBoxItem)language.SelectedItem).Tag is var l && l == Strings.Current.Language ? saved.Language : LanguageChoice.Code(l);
         save.Click += (_, _) => Ui.RunAsync(() => SaveFromButton(save, saved with { TapTimeoutMs = Read(), Language = ReadLanguage() }), "save general");
 
         return new StackPanel

@@ -105,10 +105,13 @@ sealed class AppHost(DispatcherQueue ui)
     public void Reload()
     {
         loaded = ConfigStore.Load(configPath, AclGuard.IsWritableOnlyByAdmins, presets);
-        foreach (var e in loaded.Errors) Program.Log.Write("WARN", "Config: " + e);
         var before = Strings.Current;
-        Program.ApplyLanguage(loaded.Config.Language);
-        if (Strings.Current != before && tray is not null) LanguageChanged();
+        // Config ilegível (ou alterável por não admin): mantém o idioma em uso em vez de cair no do instalador
+        if (!loaded.ReadOnly) Program.ApplyLanguage(loaded.Config.Language);
+        var changed = Strings.Current != before;
+        if (changed) loaded = ConfigStore.Load(configPath, AclGuard.IsWritableOnlyByAdmins, presets); // erros no idioma novo
+        foreach (var e in loaded.Errors) Program.Log.Write("WARN", "Config: " + e);
+        if (changed && tray is not null) LanguageChanged();
     }
 
     /// <summary>Spec da tradução §4: a bandeja muda na hora; as preferências reabrem já no novo idioma; o resto ao reaparecer.</summary>
@@ -117,19 +120,21 @@ sealed class AppHost(DispatcherQueue ui)
         Program.Log.Write("INFO", "Idioma: " + LanguageChoice.Code(Strings.Current.Language));
         tray.Relabel();
         UpdateTray();
-        if (settings is null) return;
+        if (settings is not { } current) return;
         // Depois do clique em Salvar terminar: fechar a janela dentro do próprio evento dela não é seguro
         ui.TryEnqueue(() => Shell.Ui.Run(() =>
         {
-            var old = settings;
+            if (settings != current) return; // o usuário fechou as preferências nesse meio-tempo
             settings = null;
-            old?.Close();
-            OpenSettings();
+            current.Close();
+            OpenSettings("general"); // volta para onde o idioma foi trocado
         }, "reopen settings"));
     }
 
     /// <summary>One preferences window; reopened after it is closed.</summary>
-    void OpenSettings()
+    void OpenSettings() => OpenSettings(null);
+
+    void OpenSettings(string? page)
     {
         try
         {
@@ -139,7 +144,7 @@ sealed class AppHost(DispatcherQueue ui)
                 opened.Closed += () => { if (settings == opened) settings = null; };
                 settings = opened;
             }
-            settings.Show();
+            settings.Show(page);
         }
         catch (Exception e)
         {

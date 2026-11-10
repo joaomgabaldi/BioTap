@@ -145,7 +145,7 @@ static class PresetEditors
         var target = new RadioButtons { Header = Strings.Current.WhatToCapture, Items = { Strings.Current.Screen, Strings.Current.CurrentWindow }, SelectedIndex = S("target") == "window" ? 1 : 0 };
         var save = new CheckBox { Content = Strings.Current.SaveToFolder, IsChecked = B("save", true) };
         var folder = new TextBox { Header = Strings.Current.Folder, Text = S("folder") is { Length: > 0 } f ? f : ScreenshotPreset.DefaultFolder };
-        var browse = new Button { Content = "Procurar…" };
+        var browse = new Button { Content = Strings.Current.Browse };
         browse.Click += (_, _) => Ui.RunAsync(async () =>
         {
             try
@@ -185,7 +185,7 @@ static class PresetEditors
     static (UIElement, Func<JsonObject>) OpenTarget(Func<string, string> S, WindowId windowId)
     {
         var target = new TextBox { Header = Strings.Current.OpenTargetHeader, Text = S("target"), PlaceholderText = Strings.Current.OpenTargetPlaceholder };
-        var browse = new Button { Content = "Procurar…" };
+        var browse = new Button { Content = Strings.Current.Browse };
         browse.Click += (_, _) => Ui.RunAsync(async () =>
         {
             // Windows App SDK picker: unlike the WinRT one, it works in an elevated app
