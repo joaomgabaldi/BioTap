@@ -30,7 +30,7 @@ public static class ShortcutKeys
         for (var c = '0'; c <= '9'; c++) d[c.ToString()] = c;
         for (var i = 1; i <= 24; i++) d["F" + i] = (ushort)(0x70 + i - 1);
         d["Esquerda"] = 0x25; d["Cima"] = 0x26; d["Direita"] = 0x27; d["Baixo"] = 0x28;
-        d["Esc"] = 0x1B; d["Tab"] = 0x09; d["Enter"] = 0x0D; d["Espaço"] = 0x20; d["Backspace"] = 0x08;
+        d["Esc"] = 0x1B; d["Tab"] = 0x09; d["Enter"] = 0x0D; d["Espaço"] = 0x20; d["Backspace"] = 0x08; // ids gravados no config.json: não traduzir (o nome na tela vem de Strings.KeyName)
         d["Delete"] = 0x2E; d["Insert"] = 0x2D; d["Home"] = 0x24; d["End"] = 0x23;
         d["PageUp"] = 0x21; d["PageDown"] = 0x22; d["PrintScreen"] = 0x2C;
         return d;

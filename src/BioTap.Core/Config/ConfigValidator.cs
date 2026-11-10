@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Config;
 
@@ -15,20 +16,20 @@ public static class ConfigValidator
     {
         var errors = new List<ConfigError>();
         if (c.TapTimeoutMs is < TapCounter.MinTimeoutMs or > TapCounter.MaxTimeoutMs)
-            errors.Add(new(null, $"Tempo da sequência precisa estar entre {TapCounter.MinTimeoutMs} e {TapCounter.MaxTimeoutMs} ms."));
+            errors.Add(new(null, Strings.Current.TimeoutRange(TapCounter.MinTimeoutMs, TapCounter.MaxTimeoutMs)));
         if (c.Overlay.DurationMs is < OverlayConfig.MinDurationMs or > OverlayConfig.MaxDurationMs)
-            errors.Add(new(null, $"Duração do overlay precisa estar entre {OverlayConfig.MinDurationMs} e {OverlayConfig.MaxDurationMs} ms."));
+            errors.Add(new(null, Strings.Current.OverlayRange(OverlayConfig.MinDurationMs, OverlayConfig.MaxDurationMs)));
 
         var byTaps = new Dictionary<int, ActionConfig>();
         var ids = new HashSet<Guid>();
         foreach (var a in c.Actions)
         {
             if (a.Id == Guid.Empty || !ids.Add(a.Id))
-                errors.Add(new(a.Id, "Ação com identificador vazio ou repetido."));
+                errors.Add(new(a.Id, Strings.Current.ActionBadId));
             if (a.Taps is < 1 or > Protocol.MaxTaps)
-                errors.Add(new(a.Id, $"Toques precisam estar entre 1 e {Protocol.MaxTaps}."));
+                errors.Add(new(a.Id, Strings.Current.TapsRange(Protocol.MaxTaps)));
             else if (!byTaps.TryAdd(a.Taps, a))
-                errors.Add(new(a.Id, $"{a.Taps} toques já usado por {byTaps[a.Taps].Name}."));
+                errors.Add(new(a.Id, Strings.Current.TapsTaken(a.Taps, byTaps[a.Taps].Name)));
 
             if (a.Enabled && CheckPreset(a, presets) is { } bad) errors.Add(new(a.Id, bad));
         }
@@ -39,14 +40,14 @@ public static class ConfigValidator
     {
         try
         {
-            if (!presets.IsKnown(a.Preset)) return $"Preset desconhecido: {a.Preset}.";
+            if (!presets.IsKnown(a.Preset)) return Strings.Current.UnknownPresetNamed(a.Preset);
             if (presets.ValidateParams(a.Preset, a.Params) is { } bad) return bad;
-            if (a.Preset == "sequence" && HasNestedSequence(a.Params)) return "Uma sequência não pode conter outra sequência.";
+            if (a.Preset == "sequence" && HasNestedSequence(a.Params)) return Strings.Current.SeqNoNested;
             return null;
         }
         catch (Exception)
         {
-            return "Parâmetros inválidos."; // a broken preset validator only invalidates its own action
+            return Strings.Current.InvalidParams; // a broken preset validator only invalidates its own action
         }
     }
 

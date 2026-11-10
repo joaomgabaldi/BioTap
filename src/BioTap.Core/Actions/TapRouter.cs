@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using BioTap.Core.Config;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Actions;
 
@@ -26,12 +27,12 @@ public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, Tim
         }
         catch (Exception)
         {
-            Emit(new(OutcomeKind.Failed, $"{n} toques", "Erro interno", null));
+            Emit(new(OutcomeKind.Failed, Strings.Current.Taps(n), Strings.Current.InternalError, null));
             return;
         }
         if (action is null)
         {
-            Emit(new(OutcomeKind.NothingConfigured, $"Nada configurado para {n} toques", null, null));
+            Emit(new(OutcomeKind.NothingConfigured, Strings.Current.NothingConfiguredFor(n), null, null));
             return;
         }
         Start(action);
@@ -44,12 +45,12 @@ public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, Tim
     {
         if (presets.Get(action.Preset) is not { } preset)
         {
-            Emit(new(OutcomeKind.Failed, action.Name, "Preset desconhecido", action.Icon));
+            Emit(new(OutcomeKind.Failed, action.Name, Strings.Current.UnknownPreset, action.Icon));
             return;
         }
         if (!running.TryAdd(action.Id, 0))
         {
-            Emit(new(OutcomeKind.Blocked, action.Name, "Ainda em execução", action.Icon));
+            Emit(new(OutcomeKind.Blocked, action.Name, Strings.Current.StillRunning, action.Icon));
             return;
         }
         _ = Task.Run(() => RunAsync(action, preset));
@@ -72,7 +73,7 @@ public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, Tim
         }
         catch (TimeoutException)
         {
-            Emit(new(OutcomeKind.Failed, action.Name, "Tempo esgotado", action.Icon));
+            Emit(new(OutcomeKind.Failed, action.Name, Strings.Current.TimedOut, action.Icon));
         }
         catch (PresetException e)
         {
@@ -81,7 +82,7 @@ public sealed class TapRouter(Func<AppConfig> config, PresetCatalog presets, Tim
         catch (Exception)
         {
             // Raw exception messages can carry command lines, paths or typed text: never put them on screen
-            Emit(new(OutcomeKind.Failed, action.Name, "Erro ao executar", action.Icon));
+            Emit(new(OutcomeKind.Failed, action.Name, Strings.Current.RunError, action.Icon));
         }
         finally
         {

@@ -9,6 +9,7 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Dwm;
 using Windows.Win32.Graphics.Gdi;
+using BioTap.Core.Text;
 
 namespace BioTap.App.Os;
 
@@ -27,7 +28,7 @@ sealed class ScreenCapture(DispatcherQueue ui) : IScreenCapture
         }
         catch (Exception e) when (e is not PresetException)
         {
-            throw new PresetException("Não foi possível capturar a tela");
+            throw new PresetException(Strings.Current.CaptureFailed);
         }
     }
 
@@ -44,7 +45,7 @@ sealed class ScreenCapture(DispatcherQueue ui) : IScreenCapture
         }
         catch (Exception e) when (e is not PresetException)
         {
-            throw new PresetException("Não foi possível capturar a tela");
+            throw new PresetException(Strings.Current.CaptureFailed);
         }
     }
 
@@ -81,11 +82,11 @@ sealed class ScreenCapture(DispatcherQueue ui) : IScreenCapture
             finally { done.Set(); }
         }
         if (ui.HasThreadAccess) Work();
-        else if (!ui.TryEnqueue(Work)) throw new PresetException("Não foi possível copiar a imagem");
+        else if (!ui.TryEnqueue(Work)) throw new PresetException(Strings.Current.CopyImageFailed);
         // Not started within 2 s: cancel it. Already running: give it a little more time to finish
         if (!done.Wait(TimeSpan.FromSeconds(2)) && Interlocked.CompareExchange(ref state, 2, 0) == 0
             || !done.IsSet && !done.Wait(TimeSpan.FromSeconds(2))
             || error is not null)
-            throw new PresetException("Não foi possível copiar a imagem");
+            throw new PresetException(Strings.Current.CopyImageFailed);
     }
 }

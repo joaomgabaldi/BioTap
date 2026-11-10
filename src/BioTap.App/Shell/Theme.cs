@@ -1,6 +1,7 @@
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using BioTap.Core.Text;
 
 namespace BioTap.App.Shell;
 
@@ -29,5 +30,5 @@ static class Theme
     /// <summary>Subtle light border drawn by DWM around the glass windows (#FFFFFF at ~15% over the glass).</summary>
     public static readonly Windows.UI.Color GlassBorder = ColorHelper.FromArgb(0xFF, 0x4A, 0x4A, 0x4A);
 
-    public static string Taps(int n) => n == 1 ? "1 toque" : $"{n} toques";
+    public static string Taps(int n) => Strings.Current.Taps(n);
 }

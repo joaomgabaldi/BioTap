@@ -13,6 +13,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using BioTap.Core.Text;
 
 namespace BioTap.App.Settings;
 
@@ -24,20 +25,20 @@ namespace BioTap.App.Settings;
 /// </summary>
 sealed class SettingsWindow
 {
-    static readonly (string Glyph, string Label)[] IconChoices =
+    static readonly (string Glyph, Func<Strings, string> Label)[] IconChoices =
     [
-        ("E8E5", "Abrir"), ("E756", "Comando"), ("E71D", "Apps"), ("E8B7", "Pasta"), ("E767", "Som"), ("E7F6", "Fone"),
-        ("E714", "Vídeo"), ("E774", "Web"), ("E7FC", "Jogo"), ("E72E", "Cadeado"), ("E722", "Câmera"), ("E768", "Play"),
-        ("E734", "Estrela"), ("E928", "Digital"),
+        ("E8E5", s => s.IconOpen), ("E756", s => s.IconCommand), ("E71D", s => s.IconApps), ("E8B7", s => s.IconFolder), ("E767", s => s.IconSound), ("E7F6", s => s.IconHeadphones),
+        ("E714", s => s.IconVideo), ("E774", s => s.IconWeb), ("E7FC", s => s.IconGame), ("E72E", s => s.IconLock), ("E722", s => s.IconCamera), ("E768", s => s.IconPlay),
+        ("E734", s => s.IconStar), ("E928", s => s.IconFingerprint),
     ];
 
     /// <summary>"Nova ação" menu groups; a preset missing here still shows, under "Outros".</summary>
-    static readonly (string Name, string[] Presets)[] Categories =
+    static readonly (Func<Strings, string> Name, string[] Presets)[] Categories =
     [
-        ("Abrir e executar", ["openTarget", "runCommand", "sequence"]),
-        ("Teclado e texto", ["shortcut", "copy", "paste", "typeText"]),
-        ("Som e mídia", ["mute", "playPause", "volumeUp", "volumeDown", "volumeSet", "audioCycle"]),
-        ("Janelas e sistema", ["topmost", "minimizeOthers", "lock", "screenshot", "qrCode"]),
+        (s => s.CatOpenRun, ["openTarget", "runCommand", "sequence"]),
+        (s => s.CatKeyboard, ["shortcut", "copy", "paste", "typeText"]),
+        (s => s.CatSound, ["mute", "playPause", "volumeUp", "volumeDown", "volumeSet", "audioCycle"]),
+        (s => s.CatWindows, ["topmost", "minimizeOthers", "lock", "screenshot", "qrCode"]),
     ];
 
     const string FingerprintGlyph = ""; // the app's own mark (same glyph as the tray icon)
@@ -51,7 +52,7 @@ sealed class SettingsWindow
         IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed,
         IsPaneToggleButtonVisible = false,
         IsSettingsVisible = false,
-        OpenPaneLength = 215,
+        OpenPaneLength = 250, // "Appearance and feedback" cabe sem cortar
     };
     readonly InfoBar banner = new() { IsClosable = true, Margin = new Thickness(0, 0, 0, 12) };
     readonly ContentControl pageHost = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch };
@@ -69,17 +70,17 @@ sealed class SettingsWindow
         saved = host.Loaded.Config;
         saver = new SettingsSaver(host.ConfigPath, host.Presets, AclGuard.IsWritableOnlyByAdmins, host.Connection.SendTimeoutAsync);
 
-        nav.MenuItems.Add(NavItem("Ações", "", "actions"));
-        nav.MenuItems.Add(NavItem("Geral", "", "general"));
-        nav.MenuItems.Add(NavItem("Aparência e feedback", "", "appearance"));
+        nav.MenuItems.Add(NavItem(Strings.Current.NavActions, "", "actions"));
+        nav.MenuItems.Add(NavItem(Strings.Current.NavGeneral, "", "general"));
+        nav.MenuItems.Add(NavItem(Strings.Current.NavAppearance, "", "appearance"));
         nav.PaneHeader = new StackPanel
         {
             Margin = new Thickness(12, 22, 12, 22),
             Spacing = 4,
             Children =
             {
-                new TextBlock { Text = "Preferências", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = Theme.Res("BioTapTextBrush") },
-                new TextBlock { Text = "Ações na ponta dos dedos", FontSize = 12, Foreground = Theme.Res("BioTapTextMutedBrush") },
+                new TextBlock { Text = Strings.Current.SettingsTitle, FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = Theme.Res("BioTapTextBrush") },
+                new TextBlock { Text = Strings.Current.SettingsSubtitle, FontSize = 12, Foreground = Theme.Res("BioTapTextMutedBrush") },
             },
         };
         // Real state from the service connection (never a fixed "pronto")
@@ -92,7 +93,7 @@ sealed class SettingsWindow
             BorderBrush = Theme.Res("BioTapLineBrush"), BorderThickness = new Thickness(0, 1, 0, 0),
             Margin = new Thickness(14, 0, 14, 0), Padding = new Thickness(0, 18, 0, 20), Child = status,
         };
-        AutomationProperties.SetName(status, "Estado do sensor");
+        AutomationProperties.SetName(status, Strings.Current.SensorStatusName);
         nav.SelectionChanged += (_, e) => Ui.Run(() => ShowPage((e.SelectedItem as NavigationViewItem)?.Tag as string), "settings page");
         // One layout for the window's lifetime: the banner keeps a single parent; only the page changes
         nav.Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = new StackPanel { Padding = new Thickness(35, 36, 35, 35), Children = { banner, pageHost } } };
@@ -119,7 +120,7 @@ sealed class SettingsWindow
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(nav, 1);
 
-        window = new Window { Title = "BioTap — Preferências", Content = root, ExtendsContentIntoTitleBar = true };
+        window = new Window { Title = Strings.Current.WindowTitle, Content = root, ExtendsContentIntoTitleBar = true };
         window.SetTitleBar(titleBar);
         window.AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "BioTap.ico")); // taskbar and Alt+Tab
         var bar = window.AppWindow.TitleBar;
@@ -144,19 +145,22 @@ sealed class SettingsWindow
         RefreshStatus();
     }
 
+    public void Close() => window.Close();
+
     static NavigationViewItem NavItem(string text, string glyph, string tag)
         => new() { Content = text, Icon = new FontIcon { Glyph = glyph }, Tag = tag };
 
     readonly TaskCompletionSource loaded = new();
 
-    public async void Show()
+    /// <param name="page">Tag da página a abrir ("general"...) quando a janela é nova; null = a primeira.</param>
+    public async void Show(string? page = null)
     {
         try
         {
             window.Activate();
             PInvoke.SetForegroundWindow(hwnd);
             await loaded.Task; // completes after the first Activate puts the content on screen
-            if (nav.SelectedItem is null) nav.SelectedItem = nav.MenuItems[0];
+            if (nav.SelectedItem is null) nav.SelectedItem = nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (string)i.Tag == page) ?? nav.MenuItems[0];
             if (dialogOpen) return; // an editor is already open: just bring the window up
             saved = host.Loaded.Config; // pick up a config reloaded since this window was built
         }
@@ -172,7 +176,7 @@ sealed class SettingsWindow
         pageHost.Content = tag switch { "general" => GeneralPage(), "appearance" => AppearancePage(), _ => ActionsPage() };
         var loaded = host.Loaded;
         if (loaded.ReadOnly)
-            Banner(InfoBarSeverity.Error, "A configuração atual não pode ser alterada", string.Join(" ", loaded.Errors));
+            Banner(InfoBarSeverity.Error, Strings.Current.BannerConfigReadOnly, string.Join(" ", loaded.Errors));
     }
 
     void Banner(InfoBarSeverity severity, string title, string? message)
@@ -188,12 +192,12 @@ sealed class SettingsWindow
         var outcome = await saver.SaveAsync(saved, next);
         if (!outcome.Saved)
         {
-            Banner(InfoBarSeverity.Error, "Não foi salvo", outcome.Message);
+            Banner(InfoBarSeverity.Error, Strings.Current.BannerNotSaved, outcome.Message);
             return false;
         }
         host.Reload();
         saved = host.Loaded.Config;
-        if (outcome.Message is { } warning) Banner(InfoBarSeverity.Warning, "Salvo com aviso", warning);
+        if (outcome.Message is { } warning) Banner(InfoBarSeverity.Warning, Strings.Current.BannerSavedWithWarning, warning);
         else banner.IsOpen = false; // success is shown where the user acted (the list redraws; Salvar says "Salvo")
         return true;
     }
@@ -278,7 +282,7 @@ sealed class SettingsWindow
     }
 
     // Always enabled: a NumberBox commits typed text only when it loses focus, which the click on Salvar causes
-    static Button SaveButton() => new() { Content = "Salvar", Style = Theme.Style("AccentButtonStyle"), MinWidth = 104 };
+    static Button SaveButton() => new() { Content = Strings.Current.Save, Style = Theme.Style("AccentButtonStyle"), MinWidth = 104 };
 
     /// <summary>Saves through <paramref name="save"/>; on success the button reads "✓ Salvo" for 2 s.</summary>
     async Task SaveFromButton(Button save, AppConfig next)
@@ -287,11 +291,11 @@ sealed class SettingsWindow
         try
         {
             if (!await SaveAsync(next)) return;
-            save.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { new FontIcon { Glyph = "", FontSize = 12 }, new TextBlock { Text = "Salvo" } } };
+            save.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { new FontIcon { Glyph = "", FontSize = 12 }, new TextBlock { Text = Strings.Current.Saved } } };
             var back = window.DispatcherQueue.CreateTimer();
             back.Interval = TimeSpan.FromSeconds(2);
             back.IsRepeating = false;
-            back.Tick += (_, _) => Ui.Run(() => save.Content = "Salvar", "save label");
+            back.Tick += (_, _) => Ui.Run(() => save.Content = Strings.Current.Save, "save label");
             back.Start();
         }
         finally { save.IsEnabled = true; }
@@ -302,8 +306,8 @@ sealed class SettingsWindow
     UIElement ActionsPage()
     {
         var page = new StackPanel();
-        page.Children.Add(Heading("Ações", "Escolha o que acontece a cada sequência de toques.", NewActionButton()));
-        page.Children.Add(SectionLabel("SUAS AÇÕES"));
+        page.Children.Add(Heading(Strings.Current.NavActions, Strings.Current.ActionsDescription, NewActionButton()));
+        page.Children.Add(SectionLabel(Strings.Current.YourActions));
         var list = new StackPanel { Spacing = 10 };
         if (saved.Actions.Count == 0)
             list.Children.Add(Group(new TextBlock { Text = PanelModel.EmptyText, Margin = new Thickness(21), Foreground = Theme.Res("BioTapTextMutedBrush") }));
@@ -315,7 +319,7 @@ sealed class SettingsWindow
             Children =
             {
                 new FontIcon { Glyph = FingerprintGlyph, FontSize = 16, Foreground = Theme.Res("BioTapTextMutedBrush") },
-                new TextBlock { Text = "Toque no leitor para executar uma ação.", FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = Theme.Res("BioTapTextMutedBrush") },
+                new TextBlock { Text = Strings.Current.TapHint, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = Theme.Res("BioTapTextMutedBrush") },
             },
         });
         return page;
@@ -326,8 +330,8 @@ sealed class SettingsWindow
         var menu = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedRight };
         var all = host.Presets.All.ToList();
         var listed = Categories.SelectMany(c => c.Presets).ToHashSet();
-        var groups = Categories.Select(c => (c.Name, Presets: c.Presets.Select(id => all.FirstOrDefault(p => p.Id == id)).OfType<IPreset>().ToList())).ToList();
-        groups.Add(("Outros", all.Where(p => !listed.Contains(p.Id)).ToList()));
+        var groups = Categories.Select(c => (Name: c.Name(Strings.Current), Presets: c.Presets.Select(id => all.FirstOrDefault(p => p.Id == id)).OfType<IPreset>().ToList())).ToList();
+        groups.Add((Strings.Current.CatOther, all.Where(p => !listed.Contains(p.Id)).ToList()));
         foreach (var (name, presets) in groups.Where(g => g.Presets.Count > 0))
         {
             var sub = new MenuFlyoutSubItem { Text = name };
@@ -344,7 +348,7 @@ sealed class SettingsWindow
         {
             Style = Theme.Style("AccentButtonStyle"),
             Padding = new Thickness(15, 9, 15, 9),
-            Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = "", FontSize = 12 }, new TextBlock { Text = "Nova ação", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold } } },
+            Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = "", FontSize = 12 }, new TextBlock { Text = Strings.Current.NewAction, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold } } },
             Flyout = menu,
         };
     }
@@ -355,8 +359,8 @@ sealed class SettingsWindow
         var invalid = host.Loaded.InvalidActions.Contains(a.Id);
         var presetName = host.Presets.Get(a.Preset)?.DisplayName ?? a.Preset;
         var detail = PresetEditors.Summary(a.Preset, a.Params);
-        var summary = invalid ? "Inválida — abra para corrigir" : detail.Length > 0 ? $"{presetName} · {detail}" : presetName;
-        if (!a.Enabled && !invalid) summary += " · Desativada";
+        var summary = invalid ? Strings.Current.InvalidOpenToFix : detail.Length > 0 ? $"{presetName} · {detail}" : presetName;
+        if (!a.Enabled && !invalid) summary += " · " + Strings.Current.Disabled;
 
         // Left region: tap count | icon | name and summary. Clicking it opens the editor.
         var taps = new Border
@@ -368,7 +372,7 @@ sealed class SettingsWindow
                 Children =
                 {
                     new TextBlock { Text = a.Taps.ToString(), FontSize = 25, FontWeight = Microsoft.UI.Text.FontWeights.Medium, HorizontalAlignment = HorizontalAlignment.Center, Foreground = Theme.Res("BioTapTextBrush") },
-                    new TextBlock { Text = a.Taps == 1 ? "toque" : "toques", FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, Foreground = Theme.Res("BioTapTextMutedBrush") },
+                    new TextBlock { Text = a.Taps == 1 ? Strings.Current.TapSingular : Strings.Current.TapPlural, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, Foreground = Theme.Res("BioTapTextMutedBrush") },
                 },
             },
         };
@@ -397,15 +401,15 @@ sealed class SettingsWindow
         Grid.SetColumn(tile, 1);
         Grid.SetColumn(details, 2);
         var main = new Button { Style = Theme.Style("BioTapPlainButtonStyle"), Padding = new Thickness(18, 21, 0, 21), Content = mainGrid };
-        AutomationProperties.SetName(main, $"Editar {a.Name}, {Theme.Taps(a.Taps)}");
+        AutomationProperties.SetName(main, Strings.Current.EditNamed(a.Name, Theme.Taps(a.Taps)));
         main.Click += (_, _) => Ui.RunAsync(() => EditAsync(a, isNew: false), "edit action");
 
         // Right region: test, on/off, options. Separate buttons, so using them never opens the editor.
-        var test = GhostButton("", "Testar", $"Testar {a.Name}");
+        var test = GhostButton("", Strings.Current.Test, Strings.Current.TestNamed(a.Name));
         test.Click += (_, _) => Ui.Run(() => host.Router.Test(a), "test action");
 
         var enabled = new ToggleSwitch { IsOn = a.Enabled, OnContent = null, OffContent = null, MinWidth = 0, Width = 44, VerticalAlignment = VerticalAlignment.Center };
-        AutomationProperties.SetName(enabled, $"Ativar {a.Name}");
+        AutomationProperties.SetName(enabled, Strings.Current.EnableNamed(a.Name));
         // Turning an action on or off saves at once (a single switch has nothing else to confirm)
         enabled.Toggled += (_, _) => Ui.RunAsync(async () =>
         {
@@ -413,10 +417,10 @@ sealed class SettingsWindow
             ShowPage("actions"); // redraw with the real state (saved or unchanged)
         }, "toggle action");
 
-        var more = GhostButton("", "Opções da ação", $"Opções de {a.Name}");
-        var edit = new MenuFlyoutItem { Text = "Editar", Icon = new FontIcon { Glyph = "" } };
+        var more = GhostButton("", Strings.Current.ActionOptions, Strings.Current.OptionsOf(a.Name));
+        var edit = new MenuFlyoutItem { Text = Strings.Current.Edit, Icon = new FontIcon { Glyph = "" } };
         edit.Click += (_, _) => Ui.RunAsync(() => EditAsync(a, isNew: false), "edit action");
-        var remove = new MenuFlyoutItem { Text = "Excluir", Icon = new FontIcon { Glyph = "" } };
+        var remove = new MenuFlyoutItem { Text = Strings.Current.Delete, Icon = new FontIcon { Glyph = "" } };
         remove.Click += (_, _) => Ui.RunAsync(() => DeleteAsync(a), "delete action");
         more.Flyout = new MenuFlyout { Items = { edit, remove } };
 
@@ -454,8 +458,8 @@ sealed class SettingsWindow
     {
         var confirm = new ContentDialog
         {
-            XamlRoot = window.Content.XamlRoot, Title = $"Excluir \"{a.Name}\"?", Content = $"A sequência de {Theme.Taps(a.Taps)} deixará de fazer algo.",
-            PrimaryButtonText = "Excluir", CloseButtonText = "Cancelar", DefaultButton = ContentDialogButton.Close,
+            XamlRoot = window.Content.XamlRoot, Title = Strings.Current.DeleteTitle(a.Name), Content = Strings.Current.DeleteBody(Theme.Taps(a.Taps)),
+            PrimaryButtonText = Strings.Current.Delete, CloseButtonText = Strings.Current.Cancel, DefaultButton = ContentDialogButton.Close,
         };
         if (await ShowDialogAsync(confirm) == ContentDialogResult.Primary && await SaveAsync(ActionEditor.Without(saved, a.Id)))
         {
@@ -468,24 +472,24 @@ sealed class SettingsWindow
     {
         var taps = new NumberBox
         {
-            Header = "Toques", Description = "Quantos toques seguidos no leitor executam esta ação.",
+            Header = Strings.Current.TapsHeader, Description = Strings.Current.TapsDescription,
             Minimum = 1, Maximum = Protocol.MaxTaps, Value = action.Taps, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, SmallChange = 1,
         };
         var name = new TextBox
         {
-            Header = "Nome da ação", Text = action.Name, MaxLength = 80,
-            Description = "Identifica a ação nas preferências e aparece na confirmação e na dica do painel.",
+            Header = Strings.Current.ActionName, Text = action.Name, MaxLength = 80,
+            Description = Strings.Current.ActionNameDescription,
         };
-        var icon = new ComboBox { Header = "Ícone", MinWidth = 220 };
+        var icon = new ComboBox { Header = Strings.Current.IconHeader, MinWidth = 220 };
         // Only "Abrir" can show the program's own icon; it is the default for new actions
         var hasProgramIcon = action.Preset == "openTarget";
         if (hasProgramIcon)
-            icon.Items.Add(new ComboBoxItem { Tag = "exe", Content = new TextBlock { Text = "Ícone do programa" } });
+            icon.Items.Add(new ComboBoxItem { Tag = "exe", Content = new TextBlock { Text = Strings.Current.ProgramIcon } });
         foreach (var (glyph, label) in IconChoices)
-            icon.Items.Add(new ComboBoxItem { Tag = glyph, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = Glyphs.For(new(OutcomeKind.Ran, "", null, new IconRef("glyph", glyph))) }, new TextBlock { Text = label } } } });
+            icon.Items.Add(new ComboBoxItem { Tag = glyph, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = Glyphs.For(new(OutcomeKind.Ran, "", null, new IconRef("glyph", glyph))) }, new TextBlock { Text = label(Strings.Current) } } } });
         // A glyph outside the list (set in config.json) stays as it is unless the user picks another
         if (action.Icon.Kind == "exe" ? !hasProgramIcon : !IconChoices.Any(c => c.Glyph == action.Icon.Value))
-            icon.Items.Add(new ComboBoxItem { Tag = action.Icon.Kind == "exe" ? "exe" : action.Icon.Value, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { Icons.Element(action.Icon, 16), new TextBlock { Text = "Atual" } } } });
+            icon.Items.Add(new ComboBoxItem { Tag = action.Icon.Kind == "exe" ? "exe" : action.Icon.Value, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { Icons.Element(action.Icon, 16), new TextBlock { Text = Strings.Current.CurrentIcon } } } });
         var wantProgramIcon = hasProgramIcon && (isNew || action.Icon.Kind == "exe");
         var selectedTag = wantProgramIcon || action.Icon.Kind == "exe" ? "exe" : action.Icon.Value;
         icon.SelectedItem = icon.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == selectedTag) ?? icon.Items[0];
@@ -503,16 +507,16 @@ sealed class SettingsWindow
         var fields = PresetEditors.Build(action.Preset, action.Params, window.AppWindow.Id, host.Presets, Swap);
         var presetName = host.Presets.Get(action.Preset)?.DisplayName ?? action.Preset;
         UIElement parameters = fields.Panel is Microsoft.UI.Xaml.Controls.Panel { Children.Count: 0 }
-            ? new TextBlock { Text = "Esta ação não tem parâmetros.", FontSize = 12, Foreground = Theme.Res("BioTapTextMutedBrush") }
+            ? new TextBlock { Text = Strings.Current.NoParams, FontSize = 12, Foreground = Theme.Res("BioTapTextMutedBrush") }
             : fields.Panel;
 
         var dialog = new ContentDialog
         {
             XamlRoot = window.Content.XamlRoot,
-            Title = isNew ? "Nova ação" : "Editar ação",
-            PrimaryButtonText = "Salvar",
-            SecondaryButtonText = "Testar",
-            CloseButtonText = "Cancelar",
+            Title = isNew ? Strings.Current.NewAction : Strings.Current.EditAction,
+            PrimaryButtonText = Strings.Current.Save,
+            SecondaryButtonText = Strings.Current.Test,
+            CloseButtonText = Strings.Current.Cancel,
             DefaultButton = ContentDialogButton.Primary,
             Content = new ScrollViewer
             {
@@ -524,9 +528,9 @@ sealed class SettingsWindow
                     {
                         error,
                         new TextBlock { Text = presetName, FontSize = 13, Foreground = Theme.Res("BioTapAccentLightBrush") },
-                        SectionLabel("IDENTIFICAÇÃO"), taps, name, icon,
+                        SectionLabel(Strings.Current.SectionIdentification), taps, name, icon,
                         new Rectangle { Height = 1, Fill = Theme.Res("BioTapLineBrush"), Margin = new Thickness(0, 6, 0, 6) },
-                        SectionLabel("PARÂMETROS"), parameters,
+                        SectionLabel(Strings.Current.SectionParameters), parameters,
                     },
                 },
             },
@@ -598,12 +602,12 @@ sealed class SettingsWindow
     {
         var startup = new StartupTask();
         var startWithWindows = new ToggleSwitch { OnContent = null, OffContent = null, MinWidth = 0, Width = 44 };
-        var startRow = SettingRow("Iniciar com o Windows", "Deixe suas ações disponíveis ao entrar no computador.", startWithWindows, out var startDescription);
+        var startRow = SettingRow(Strings.Current.StartWithWindows, Strings.Current.StartWithWindowsDescription, startWithWindows, out var startDescription);
         try { startWithWindows.IsOn = startup.IsEnabled(); }
         catch (Exception)
         {
             startWithWindows.IsEnabled = false;
-            startDescription.Text = "Não foi possível ler o Agendador de Tarefas.";
+            startDescription.Text = Strings.Current.TaskSchedulerUnreadable;
         }
         var reverting = false;
         startWithWindows.Toggled += (_, _) => Ui.Run(() =>
@@ -618,7 +622,7 @@ sealed class SettingsWindow
             catch (Exception e)
             {
                 Program.Log.Write("ERROR", "Startup task: " + e.GetType().Name);
-                Banner(InfoBarSeverity.Error, "Não foi possível alterar a inicialização com o Windows",
+                Banner(InfoBarSeverity.Error, Strings.Current.StartupChangeFailed,
                     e is InvalidOperationException ? e.Message : null);
                 reverting = true;
                 startWithWindows.IsOn = !startWithWindows.IsOn; // show the real state
@@ -627,22 +631,33 @@ sealed class SettingsWindow
         }, "startup toggle");
 
         var timeout = new NumberBox { Minimum = TapCounter.MinTimeoutMs, Maximum = TapCounter.MaxTimeoutMs, Value = saved.TapTimeoutMs, SmallChange = 50, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 180 };
-        var timeoutRow = SettingRow("Intervalo entre toques",
-            $"Depois do último toque, o BioTap espera este tempo sem novos toques para concluir a contagem e executar a ação. Em milissegundos ({TapCounter.MinTimeoutMs} a {TapCounter.MaxTimeoutMs}).",
+        var timeoutRow = SettingRow(Strings.Current.TapInterval,
+            Strings.Current.TapIntervalDescription(TapCounter.MinTimeoutMs, TapCounter.MaxTimeoutMs),
             timeout, out _);
+        // Spec da tradução §4: salvo pelo botão da página, como os outros campos de Geral
+        var language = new ComboBox { MinWidth = 180 };
+        language.Items.Add(new ComboBoxItem { Content = Strings.Current.LanguagePtBr, Tag = Language.PtBr });
+        language.Items.Add(new ComboBoxItem { Content = Strings.Current.LanguageEn, Tag = Language.En });
+        language.SelectedItem = language.Items.Cast<ComboBoxItem>().First(i => (Language)i.Tag == Strings.Current.Language);
+        var languageRow = SettingRow(Strings.Current.LanguageLabel, Strings.Current.LanguageDescription, language, out _);
+
         var save = SaveButton();
         int Read() => double.IsNaN(timeout.Value) ? saved.TapTimeoutMs : (int)Math.Round(timeout.Value);
-        save.Click += (_, _) => Ui.RunAsync(() => SaveFromButton(save, saved with { TapTimeoutMs = Read() }), "save general");
+        // Sem mudança no seletor, o config.json continua sem idioma (o do instalador segue valendo numa reinstalação)
+        string? ReadLanguage() => (Language)((ComboBoxItem)language.SelectedItem).Tag is var l && l == Strings.Current.Language ? saved.Language : LanguageChoice.Code(l);
+        save.Click += (_, _) => Ui.RunAsync(() => SaveFromButton(save, saved with { TapTimeoutMs = Read(), Language = ReadLanguage() }), "save general");
 
         return new StackPanel
         {
             Children =
             {
-                Heading("Geral", "Ajuste como o BioTap acompanha sua rotina."),
-                SectionLabel("INICIALIZAÇÃO"),
+                Heading(Strings.Current.NavGeneral, Strings.Current.GeneralDescription),
+                SectionLabel(Strings.Current.SectionStartup),
                 Group(startRow),
-                SectionLabel("DETECÇÃO DE TOQUES"),
+                SectionLabel(Strings.Current.SectionTapDetection),
                 Group(timeoutRow),
+                SectionLabel(Strings.Current.SectionLanguage),
+                Group(languageRow),
                 save,
             },
         };
@@ -652,7 +667,7 @@ sealed class SettingsWindow
     public void RefreshStatus()
     {
         var text = host.StatusText["BioTap: ".Length..];
-        statusText.Text = host.SensorReady ? "Sensor pronto" : char.ToUpper(text[0]) + text[1..];
+        statusText.Text = host.SensorReady ? Strings.Current.SensorReady : char.ToUpper(text[0]) + text[1..];
         statusText.Foreground = Theme.Res(host.StatusProblem ? "BioTapErrorBrush" : "BioTapTextBrush");
         statusDot.Fill = Theme.Res(host.SensorReady ? "BioTapAccentLightBrush" : host.StatusProblem ? "BioTapErrorBrush" : "BioTapTextMutedBrush");
     }
@@ -665,7 +680,7 @@ sealed class SettingsWindow
     {
         // The real pill content on the same tint; only the blur of what is behind cannot be shown inside the window
         var sample = PanelModel.Items(saved).FirstOrDefault();
-        var outcome = new ActionOutcome(OutcomeKind.Ran, sample?.Name ?? "Nome da ação", null, sample?.Icon ?? new IconRef("glyph", "E928"));
+        var outcome = new ActionOutcome(OutcomeKind.Ran, sample?.Name ?? Strings.Current.ActionName, null, sample?.Icon ?? new IconRef("glyph", "E928"));
         var preview = new Border
         {
             Height = 160, CornerRadius = (CornerRadius)Application.Current.Resources["BioTapCardRadius"], Background = Theme.Res("BioTapTitleBarBrush"),
@@ -679,7 +694,7 @@ sealed class SettingsWindow
                 Child = OverlayWindow.Content(outcome),
             },
         };
-        AutomationProperties.SetName(preview, $"Prévia da confirmação: {outcome.Title}");
+        AutomationProperties.SetName(preview, Strings.Current.PreviewNamed(outcome.Title));
 
         var show = new ToggleSwitch { IsOn = saved.Overlay.Enabled, OnContent = null, OffContent = null, MinWidth = 0, Width = 44 };
         var duration = new NumberBox { Minimum = OverlayConfig.MinDurationMs, Maximum = OverlayConfig.MaxDurationMs, Value = saved.Overlay.DurationMs, SmallChange = 250, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 180 };
@@ -691,12 +706,12 @@ sealed class SettingsWindow
         {
             Children =
             {
-                Heading("Aparência e feedback", "Uma confirmação discreta, sem interromper o que você está fazendo."),
-                SectionLabel("PRÉVIA DA CONFIRMAÇÃO"),
+                Heading(Strings.Current.NavAppearance, Strings.Current.AppearanceDescription),
+                SectionLabel(Strings.Current.SectionPreview),
                 preview,
                 Group(
-                    SettingRow("Mostrar confirmação de execução", "Mostra o ícone e o nome da ação quando ela é disparada.", show, out _),
-                    SettingRow("Tempo na tela", $"Duração da confirmação, em milissegundos ({OverlayConfig.MinDurationMs} a {OverlayConfig.MaxDurationMs}).", duration, out _)),
+                    SettingRow(Strings.Current.ShowConfirmation, Strings.Current.ShowConfirmationDescription, show, out _),
+                    SettingRow(Strings.Current.TimeOnScreen, Strings.Current.TimeOnScreenDescription(OverlayConfig.MinDurationMs, OverlayConfig.MaxDurationMs), duration, out _)),
                 save,
             },
         };

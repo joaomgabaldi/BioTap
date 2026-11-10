@@ -5,6 +5,7 @@ using BioTap.Core;
 using BioTap.Core.Actions;
 using BioTap.Core.Config;
 using Microsoft.UI.Dispatching;
+using BioTap.Core.Text;
 
 namespace BioTap.App;
 
@@ -51,10 +52,10 @@ sealed class AppHost(DispatcherQueue ui)
         [
             new OpenTargetPreset(launcher), new RunCommandPreset(launcher),
             new ShortcutPreset(keyboard),
-            new KeyPreset("copy", "Copiar", "E8C8", keyboard, Vk.Control, 0x43),
-            new KeyPreset("paste", "Colar", "E77F", keyboard, Vk.Control, 0x56),
-            new KeyPreset("mute", "Silenciar ou reativar o som", "E74F", keyboard, Vk.VolumeMute),
-            new KeyPreset("playPause", "Tocar ou pausar", "E768", keyboard, Vk.MediaPlayPause),
+            new KeyPreset("copy", s => s.PresetCopy, "E8C8", keyboard, Vk.Control, 0x43),
+            new KeyPreset("paste", s => s.PresetPaste, "E77F", keyboard, Vk.Control, 0x56),
+            new KeyPreset("mute", s => s.PresetMute, "E74F", keyboard, Vk.VolumeMute),
+            new KeyPreset("playPause", s => s.PresetPlayPause, "E768", keyboard, Vk.MediaPlayPause),
             new VolumeStepPreset(keyboard, up: true), new VolumeStepPreset(keyboard, up: false),
             new TypeTextPreset(keyboard),
             new TopmostPreset(windows), new MinimizeOthersPreset(windows), new LockPreset(windows),
@@ -95,7 +96,7 @@ sealed class AppHost(DispatcherQueue ui)
         _ = connection.RunAsync(stop.Token);
 
         UpdateTray();
-        if (loaded.Errors.Count > 0) tray.Notify("BioTap: configuração", loaded.Errors[0]);
+        if (loaded.Errors.Count > 0) tray.Notify(Strings.Current.NotifyConfigTitle, loaded.Errors[0]);
     }
 
     const string PipeServerName = "BioTap";
@@ -104,27 +105,53 @@ sealed class AppHost(DispatcherQueue ui)
     public void Reload()
     {
         loaded = ConfigStore.Load(configPath, AclGuard.IsWritableOnlyByAdmins, presets);
+        var before = Strings.Current;
+        // Config ilegível (ou alterável por não admin): mantém o idioma em uso em vez de cair no do instalador
+        if (!loaded.ReadOnly) Program.ApplyLanguage(loaded.Config.Language);
+        var changed = Strings.Current != before;
+        if (changed) loaded = ConfigStore.Load(configPath, AclGuard.IsWritableOnlyByAdmins, presets); // erros no idioma novo
         foreach (var e in loaded.Errors) Program.Log.Write("WARN", "Config: " + e);
+        if (changed && tray is not null) LanguageChanged();
+    }
+
+    /// <summary>Spec da tradução §4: a bandeja muda na hora; as preferências reabrem já no novo idioma; o resto ao reaparecer.</summary>
+    void LanguageChanged()
+    {
+        Program.Log.Write("INFO", "Idioma: " + LanguageChoice.Code(Strings.Current.Language));
+        tray.Relabel();
+        UpdateTray();
+        if (settings is not { } current) return;
+        // Depois do clique em Salvar terminar: fechar a janela dentro do próprio evento dela não é seguro
+        ui.TryEnqueue(() => Shell.Ui.Run(() =>
+        {
+            if (settings != current) return; // o usuário fechou as preferências nesse meio-tempo
+            settings = null;
+            current.Close();
+            OpenSettings("general"); // volta para onde o idioma foi trocado
+        }, "reopen settings"));
     }
 
     /// <summary>One preferences window; reopened after it is closed.</summary>
-    void OpenSettings()
+    void OpenSettings() => OpenSettings(null);
+
+    void OpenSettings(string? page)
     {
         try
         {
             if (settings is null)
             {
-                settings = new Settings.SettingsWindow(this);
-                settings.Closed += () => settings = null;
+                var opened = new Settings.SettingsWindow(this);
+                opened.Closed += () => { if (settings == opened) settings = null; };
+                settings = opened;
             }
-            settings.Show();
+            settings.Show(page);
         }
         catch (Exception e)
         {
             // A broken preferences window must never take the tray app (and so the taps) down with it
             Program.Log.Write("ERROR", $"Open settings: {e}");
             settings = null;
-            tray.Notify("BioTap", "Não foi possível abrir as preferências.");
+            tray.Notify("BioTap", Strings.Current.CannotOpenSettings);
         }
     }
 

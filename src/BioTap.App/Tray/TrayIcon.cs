@@ -1,4 +1,5 @@
 using BioTap.App.Shell;
+using BioTap.Core.Text;
 using H.NotifyIcon;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Win32;
@@ -10,6 +11,7 @@ namespace BioTap.App.Tray;
 sealed class TrayIcon : IDisposable
 {
     readonly TaskbarIcon icon;
+    readonly MenuFlyoutItem settingsItem, exitItem;
 
     public event Action? Clicked;
     public event Action? SettingsRequested;
@@ -33,8 +35,8 @@ sealed class TrayIcon : IDisposable
             {
                 Items =
                 {
-                    new MenuFlyoutItem { Text = "Preferências", Command = new RelayCommand(() => Safe(SettingsRequested, "tray settings")) },
-                    new MenuFlyoutItem { Text = "Sair", Command = new RelayCommand(() => Safe(ExitRequested, "tray exit")) },
+                    (settingsItem = new MenuFlyoutItem { Text = Strings.Current.SettingsTitle, Command = new RelayCommand(() => Safe(SettingsRequested, "tray settings")) }),
+                    (exitItem = new MenuFlyoutItem { Text = Strings.Current.Exit, Command = new RelayCommand(() => Safe(ExitRequested, "tray exit")) }),
                 },
             },
         };
@@ -50,6 +52,13 @@ sealed class TrayIcon : IDisposable
     }
 
     public void SetTooltip(string text) => icon.ToolTipText = text;
+
+    /// <summary>Textos do menu no idioma atual (depois de trocar o idioma).</summary>
+    public void Relabel()
+    {
+        settingsItem.Text = Strings.Current.SettingsTitle;
+        exitItem.Text = Strings.Current.Exit;
+    }
 
     /// <summary>A Windows notification from the tray (no toast activation needed for an unpackaged app).</summary>
     public void Notify(string title, string message) => icon.ShowNotification(title, message);

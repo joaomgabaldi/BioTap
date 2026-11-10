@@ -1,4 +1,5 @@
 using BioTap.Core.Config;
+using BioTap.Core.Text;
 
 namespace BioTap.Core;
 
@@ -7,7 +8,7 @@ public sealed record PanelItem(Guid Id, int Taps, string Name, IconRef Icon);
 /// <summary>What the panel and the tray show (spec §4). Pure, so the WinUI layer stays thin.</summary>
 public static class PanelModel
 {
-    public const string EmptyText = "Nenhuma ação configurada";
+    public static string EmptyText => Strings.Current.PanelEmpty;
 
     /// <summary>Enabled actions, ordered by tap count (the number the user looks up).</summary>
     public static IReadOnlyList<PanelItem> Items(AppConfig c)
@@ -16,16 +17,16 @@ public static class PanelModel
     /// <summary>The sensor state is only meaningful while connected; otherwise the connection explains everything.</summary>
     public static string TrayTooltip(ConnectionState connection, SensorState? sensor) => connection switch
     {
-        ConnectionState.Connecting => "BioTap: conectando ao serviço…",
-        ConnectionState.ServiceMissing => "BioTap: o serviço não está rodando",
-        ConnectionState.NotTrusted => "BioTap: o serviço não é confiável",
+        ConnectionState.Connecting => Strings.Current.StatusConnecting,
+        ConnectionState.ServiceMissing => Strings.Current.StatusServiceMissing,
+        ConnectionState.NotTrusted => Strings.Current.StatusNotTrusted,
         _ => sensor switch
         {
-            SensorState.Ok => "BioTap: pronto",
-            SensorState.NoSensor => "BioTap: sensor desconectado",
-            SensorState.NoFocus => "BioTap: sem acesso ao sensor",
-            SensorState.ReleasedForHello => "BioTap: sensor em uso pelo Windows Hello",
-            _ => "BioTap: aguardando o sensor…",
+            SensorState.Ok => Strings.Current.StatusReady,
+            SensorState.NoSensor => Strings.Current.StatusNoSensor,
+            SensorState.NoFocus => Strings.Current.StatusNoFocus,
+            SensorState.ReleasedForHello => Strings.Current.StatusHello,
+            _ => Strings.Current.StatusWaiting,
         },
     };
 

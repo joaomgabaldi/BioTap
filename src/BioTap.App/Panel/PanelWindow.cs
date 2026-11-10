@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.Graphics;
 using Windows.System;
+using BioTap.Core.Text;
 
 namespace BioTap.App.Panel;
 
@@ -59,8 +60,8 @@ sealed class PanelWindow
             Height = 44,
             CornerRadius = new CornerRadius(7),
         };
-        ToolTipService.SetToolTip(gear, "Preferências");
-        AutomationProperties.SetName(gear, "Preferências");
+        ToolTipService.SetToolTip(gear, Strings.Current.SettingsTitle);
+        AutomationProperties.SetName(gear, Strings.Current.SettingsTitle);
         gear.Click += (_, _) => Ui.Run(() => { Hide(); GearClicked?.Invoke(); }, "panel gear");
         row.Children.Add(gear);
 

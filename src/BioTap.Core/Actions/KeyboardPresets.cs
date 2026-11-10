@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using BioTap.Core.Config;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Actions;
 
@@ -7,18 +8,18 @@ namespace BioTap.Core.Actions;
 public sealed class ShortcutPreset(IKeyboard kb) : IPreset
 {
     public string Id => "shortcut";
-    public string DisplayName => "Atalho de teclado";
+    public string DisplayName => Strings.Current.PresetShortcut;
     public IconRef DefaultIcon => new("glyph", "E765");
 
     public string? ValidateParams(JsonObject p)
     {
-        if (new[] { "ctrl", "alt", "shift", "win" }.Any(m => p[m] is { } n && !(n is JsonValue v && v.TryGetValue<bool>(out _)))) return "Atalho inválido.";
+        if (new[] { "ctrl", "alt", "shift", "win" }.Any(m => p[m] is { } n && !(n is JsonValue v && v.TryGetValue<bool>(out _)))) return Strings.Current.ShortcutInvalid;
         var name = Params.Str(p, "key");
-        if (string.IsNullOrEmpty(name)) return "Escolha a tecla.";
-        if (!ShortcutKeys.All.ContainsKey(name)) return "Tecla inválida.";
+        if (string.IsNullOrEmpty(name)) return Strings.Current.ShortcutChooseKey;
+        if (!ShortcutKeys.All.ContainsKey(name)) return Strings.Current.ShortcutInvalidKey;
         bool ctrl = Params.Bool(p, "ctrl", false), alt = Params.Bool(p, "alt", false), shift = Params.Bool(p, "shift", false), win = Params.Bool(p, "win", false);
-        if (win && !ctrl && !alt && !shift && name == "L") return "O Windows não deixa enviar Win+L. Use o preset Bloquear o Windows.";
-        if (ctrl && alt && name == "Delete") return "O Windows não deixa enviar Ctrl+Alt+Del.";
+        if (win && !ctrl && !alt && !shift && name == "L") return Strings.Current.ShortcutNoWinL;
+        if (ctrl && alt && name == "Delete") return Strings.Current.ShortcutNoCtrlAltDel;
         return null;
     }
 
@@ -47,10 +48,10 @@ static class KeyPress
 }
 
 /// <summary>A fixed key or chord without parameters (copy, paste, mute, play/pause).</summary>
-public sealed class KeyPreset(string id, string name, string glyph, IKeyboard kb, params ushort[] keys) : IPreset
+public sealed class KeyPreset(string id, Func<Strings, string> name, string glyph, IKeyboard kb, params ushort[] keys) : IPreset
 {
     public string Id => id;
-    public string DisplayName => name;
+    public string DisplayName => name(Strings.Current);
     public IconRef DefaultIcon => new("glyph", glyph);
     public bool SystemFeedback => keys is [Vk.VolumeMute];
     public string? ValidateParams(JsonObject p) => null;
@@ -68,11 +69,11 @@ public sealed class VolumeStepPreset(IKeyboard kb, bool up) : IPreset
 {
     public string Id => up ? "volumeUp" : "volumeDown";
     public bool SystemFeedback => true;
-    public string DisplayName => up ? "Aumentar volume" : "Diminuir volume";
+    public string DisplayName => up ? Strings.Current.PresetVolumeUp : Strings.Current.PresetVolumeDown;
     public IconRef DefaultIcon => new("glyph", up ? "E995" : "E993");
 
     public string? ValidateParams(JsonObject p)
-        => Params.Int(p, "step") is >= 2 and <= 50 and var s && s % 2 == 0 ? null : "Escolha um passo par de 2 a 50%.";
+        => Params.Int(p, "step") is >= 2 and <= 50 and var s && s % 2 == 0 ? null : Strings.Current.VolumeStepRange;
 
     public string? CheckReady(JsonObject p) => null;
 
@@ -89,14 +90,14 @@ public sealed class TypeTextPreset(IKeyboard kb) : IPreset
     const int MaxLength = 10_000;
 
     public string Id => "typeText";
-    public string DisplayName => "Inserir texto";
+    public string DisplayName => Strings.Current.PresetTypeText;
     public IconRef DefaultIcon => new("glyph", "E8D2");
 
     public string? ValidateParams(JsonObject p)
     {
         var text = Params.Str(p, "text");
-        if (string.IsNullOrEmpty(text)) return "Escreva o texto.";
-        return text.Length > MaxLength ? "Texto longo demais (máx. 10.000 caracteres)." : null;
+        if (string.IsNullOrEmpty(text)) return Strings.Current.TypeWriteText;
+        return text.Length > MaxLength ? Strings.Current.TypeTooLong : null;
     }
 
     public string? CheckReady(JsonObject p) => null;

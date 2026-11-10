@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Actions;
 
@@ -29,7 +30,7 @@ public sealed class ShellLauncher : ILauncher
             object root = Type.Missing;
             var hwnd = 0;
             desktop = ((dynamic)windows!).FindWindowSW(ref location, ref root, SwcDesktop, ref hwnd, SwfoNeedDispatch);
-            if (desktop is null || hwnd == 0) throw new PresetException("Explorer não está rodando");
+            if (desktop is null || hwnd == 0) throw new PresetException(Strings.Current.ExplorerNotRunning);
             if (CheckHostWindow(hwnd) is { } problem) throw new PresetException(problem);
 
             view = ((dynamic)desktop).Document;   // IShellFolderViewDual of the desktop
@@ -39,7 +40,7 @@ public sealed class ShellLauncher : ILauncher
         catch (Exception e) when (e is not PresetException)
         {
             // Never fall back to an elevated start: failing is the safe outcome
-            throw new PresetException("Não foi possível abrir pelo Explorer");
+            throw new PresetException(Strings.Current.ExplorerOpenFailed);
         }
         finally
         {
@@ -50,24 +51,24 @@ public sealed class ShellLauncher : ILauncher
 
     static string? CheckHostWindow(int hwnd)
     {
-        if (PInvoke.GetWindowThreadProcessId(new HWND(hwnd), out var pid) == 0 || pid == 0) return "Explorer não encontrado";
+        if (PInvoke.GetWindowThreadProcessId(new HWND(hwnd), out var pid) == 0 || pid == 0) return Strings.Current.ExplorerNotFound;
         try
         {
             return CheckShellHost(NativeProcess.IsElevated(pid), NativeProcess.ImagePath(pid), Environment.GetFolderPath(Environment.SpecialFolder.Windows));
         }
         catch (Exception)
         {
-            return "Explorer não verificável";
+            return Strings.Current.ExplorerNotVerifiable;
         }
     }
 
     /// <summary>null when the shell host is the user's normal Explorer; otherwise why it must not be used.</summary>
     internal static string? CheckShellHost(bool elevated, string? image, string windowsDir)
     {
-        if (image is null) return "Explorer não verificável";
+        if (image is null) return Strings.Current.ExplorerNotVerifiable;
         if (!string.Equals(Path.GetFullPath(image), Path.Combine(windowsDir, "explorer.exe"), StringComparison.OrdinalIgnoreCase))
-            return "O shell não é o Explorer";
-        return elevated ? "O Explorer está rodando como administrador" : null;
+            return Strings.Current.ShellNotExplorer;
+        return elevated ? Strings.Current.ExplorerElevated : null;
     }
 
     public void RunElevated(string file, string args, bool showWindow)

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using BioTap.Core.Actions;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Config;
 
@@ -15,7 +16,7 @@ public static class ActionEditor
     public static string? Check(AppConfig c, ActionConfig edited, IPresetCatalog presets)
     {
         if (c.Actions.FirstOrDefault(a => a.Id != edited.Id && a.Taps == edited.Taps) is { } other)
-            return $"Já usado por {other.Name}";
+            return Strings.Current.AlreadyUsedBy(other.Name);
         var errors = ConfigValidator.Validate(WithAction(c, edited), presets).Where(e => e.ActionId == edited.Id);
         return errors.Select(e => e.Message).FirstOrDefault();
     }
@@ -42,7 +43,7 @@ public sealed class SettingsSaver(string path, IPresetCatalog presets, Func<stri
         }
         catch (Exception e) when (e is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            return new(false, e is InvalidOperationException ? e.Message : "Não foi possível gravar a configuração.");
+            return new(false, e is InvalidOperationException ? e.Message : Strings.Current.ConfigNotSaved);
         }
         if (after.TapTimeoutMs == before.TapTimeoutMs) return new(true, null);
         try
@@ -51,7 +52,7 @@ public sealed class SettingsSaver(string path, IPresetCatalog presets, Func<stri
         }
         catch (Exception)
         {
-            return new(true, "Salvo, mas o serviço não recebeu o novo tempo."); // it reads the file on its next start
+            return new(true, Strings.Current.SavedServiceNotNotified); // it reads the file on its next start
         }
         return new(true, null);
     }

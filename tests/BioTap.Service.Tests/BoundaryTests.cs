@@ -56,6 +56,59 @@ public class BoundaryTests
         Assert.DoesNotContain("highestAvailable", manifest);
     }
 
+    // Spec da tradução §7: texto visível em português só nas classes de idioma (Core/Text). Logs ficam em português.
+    [Theory]
+    [InlineData("BioTap.Core")]
+    [InlineData("BioTap.App")]
+    public void UserVisibleText_IsInStringsOnly(string project)
+    {
+        var root = Path.Combine(RepoRoot(), "src", project);
+        var literal = new System.Text.RegularExpressions.Regex(@"""(?:[^""\\]|\\.)*""");
+        var portuguese = new System.Text.RegularExpressions.Regex("[ãáàâéêíóôõúçÃÁÀÂÉÊÍÓÔÕÚÇ]");
+        var log = new System.Text.RegularExpressions.Regex(@"\.Write\(|Log(Information|Warning|Error|Debug|Critical|Trace)\(");
+        var offenders = new List<string>();
+        foreach (var f in Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+        {
+            var rel = Path.GetRelativePath(root, f);
+            if (rel.StartsWith("obj") || rel.StartsWith("bin") || rel.StartsWith("Text" + Path.DirectorySeparatorChar)) continue;
+            var lines = File.ReadAllLines(f);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].TrimStart();
+                if (line.StartsWith("//") || log.IsMatch(line) || line.Contains("// ids gravados no config.json: não traduzir")) continue;
+                if (literal.Matches(line).Any(m => portuguese.IsMatch(m.Value))) offenders.Add($"{rel}:{i + 1}");
+            }
+        }
+        Assert.True(offenders.Count == 0, string.Join(Environment.NewLine, offenders));
+    }
+
+    // Revisão final: um texto traduzido que ninguém usa quer dizer que a tela ainda mostra o texto fixo antigo
+    [Fact]
+    public void EveryTranslatedText_IsUsed()
+    {
+        var src = Path.Combine(RepoRoot(), "src");
+        var code = string.Join("\n", Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}Text{Path.DirectorySeparatorChar}"))
+            .Select(File.ReadAllText));
+        var strings = typeof(BioTap.Core.Text.Strings);
+        var names = strings.GetProperties().Select(p => p.Name).Concat(strings.GetMethods().Where(m => !m.IsSpecialName && m.DeclaringType == strings).Select(m => m.Name))
+            .Where(n => n is not ("Current" or "Language" or "For")).Distinct();
+        var unused = names.Where(n => !System.Text.RegularExpressions.Regex.IsMatch(code, $@"\.{n}\b")).ToList();
+        Assert.True(unused.Count == 0, "Sem uso: " + string.Join(", ", unused));
+    }
+
+    // Spec da tradução §6: o idioma do instalador vem só de HKLM (um processo sem admin não escreve lá)
+    [Fact]
+    public void InstallerLanguage_ReadsOnlyHklm()
+    {
+        var src = Path.Combine(RepoRoot(), "src");
+        var code = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .Select(File.ReadAllText).ToList();
+        Assert.DoesNotContain(code, c => c.Contains("Registry.CurrentUser") || c.Contains("RegistryHive.CurrentUser"));
+        Assert.Contains(code, c => c.Contains("""Registry.LocalMachine.OpenSubKey(@"Software\BioTap")"""));
+    }
+
     [Fact]
     public void HandwrittenCode_HasNoUnsafe()
     {

@@ -33,6 +33,14 @@ public sealed record AppConfig(int Version, int TapTimeoutMs, OverlayConfig Over
     public const int CurrentVersion = 1;
     public static AppConfig Default { get; } = new(CurrentVersion, ServiceConfig.Default.TapTimeoutMs, OverlayConfig.Default, []);
 
+    /// <summary>
+    /// Idioma escolhido em Preferências ("pt-BR"/"en"; spec da tradução §3). Opcional, sem mudar a versão. Qualquer
+    /// valor é guardado como veio (texto) ou vira null (não texto); LanguageChoice decide se vale.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(TextOrNullConverter))]
+    public string? Language { get; init; }
+
     /// <summary>Fields this version does not know; kept so saving never drops them.</summary>
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; init; }
 }
@@ -42,4 +50,22 @@ public interface IPresetCatalog
     bool IsKnown(string preset);
     /// <summary>null = valid.</summary>
     string? ValidateParams(string preset, JsonObject p);
+}
+
+/// <summary>Um campo opcional editável à mão: um número ou objeto no lugar do texto vira null em vez de invalidar a config.</summary>
+sealed class TextOrNullConverter : JsonConverter<string?>
+{
+    public override bool HandleNull => true;
+
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String) return reader.GetString();
+        reader.Skip();
+        return null;
+    }
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null) writer.WriteNullValue(); else writer.WriteStringValue(value);
+    }
 }

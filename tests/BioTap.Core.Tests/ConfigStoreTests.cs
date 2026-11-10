@@ -113,4 +113,34 @@ public sealed class ConfigStoreTests : IDisposable
         File.WriteAllText(Path_, "{\"version\":1,\"pad\":\"" + new string('a', 1024 * 1024) + "\"}");
         Assert.True(ConfigStore.Load(Path_, Secure, Catalog).ReadOnly);
     }
+
+    // Spec da tradução §3: idioma escolhido em Preferências; valor inválido não derruba a config
+    [Fact]
+    public void Language_RoundTrips()
+    {
+        ConfigStore.Save(Path_, AppConfig.Default with { Language = "en" }, Catalog, Secure);
+        Assert.Equal("en", ConfigStore.Load(Path_, Secure, Catalog).Config.Language);
+    }
+
+    [Fact]
+    public void Language_MissingIsNull()
+    {
+        ConfigStore.Save(Path_, AppConfig.Default, Catalog, Secure);
+        Assert.DoesNotContain("language", File.ReadAllText(Path_));
+        Assert.Null(ConfigStore.Load(Path_, Secure, Catalog).Config.Language);
+    }
+
+    [Theory]
+    [InlineData("\"xx\"", "xx")]
+    [InlineData("123", null)]
+    [InlineData("{\"a\":1}", null)]
+    [InlineData("null", null)]
+    public void Language_InvalidStillLoads(string json, string? expected)
+    {
+        File.WriteAllText(Path_, $$"""{"version":1,"tapTimeoutMs":800,"overlay":{"enabled":true,"durationMs":1500},"actions":[],"language":{{json}}}""");
+        var r = ConfigStore.Load(Path_, Secure, Catalog);
+        Assert.Empty(r.Errors);
+        Assert.False(r.ReadOnly);
+        Assert.Equal(expected, r.Config.Language);
+    }
 }

@@ -6,13 +6,13 @@ using Windows.Win32.Media.Audio.Endpoints;
 using Windows.Win32.System.Com;
 using Windows.Devices.Enumeration;
 using Windows.Media.Devices;
+using BioTap.Core.Text;
 
 namespace BioTap.App.Os;
 
 /// <summary>IAudio through Core Audio. Called from pool threads (MTA): COM objects are created per call and released right away. Never logs device names.</summary>
 sealed class WindowsAudio : IAudio
 {
-    const string NoName = "Dispositivo sem nome";
 
     const string InterfaceSuffix = "#{e6327cad-dcec-4949-ae8a-991e976a79d2}";
 
@@ -24,7 +24,7 @@ sealed class WindowsAudio : IAudio
             var infos = DeviceInformation.FindAllAsync(MediaDevice.GetAudioRenderSelector()).AsTask().GetAwaiter().GetResult();
             var list = new List<AudioDevice>();
             foreach (var info in infos)
-                if (AudioIds.FromWinRt(info.Id) is { } id) list.Add(new AudioDevice(id, string.IsNullOrWhiteSpace(info.Name) ? NoName : info.Name));
+                if (AudioIds.FromWinRt(info.Id) is { } id) list.Add(new AudioDevice(id, string.IsNullOrWhiteSpace(info.Name) ? Strings.Current.UnnamedDevice : info.Name));
             return list;
         }
         catch (Exception e) when (e is COMException or InvalidOperationException) { return []; }
@@ -55,10 +55,10 @@ sealed class WindowsAudio : IAudio
         {
             cfg = (IPolicyConfig)new PolicyConfigClient();
             foreach (var role in new[] { PolicyRole.Console, PolicyRole.Multimedia, PolicyRole.Communications })
-                if (cfg.SetDefaultEndpoint(id, role) < 0) throw new PresetException("Não foi possível trocar a saída");
+                if (cfg.SetDefaultEndpoint(id, role) < 0) throw new PresetException(Strings.Current.AudioSwitchFailed);
         }
-        catch (COMException) { throw new PresetException("Não foi possível trocar a saída"); }
-        catch (InvalidCastException) { throw new PresetException("Não foi possível trocar a saída"); }
+        catch (COMException) { throw new PresetException(Strings.Current.AudioSwitchFailed); }
+        catch (InvalidCastException) { throw new PresetException(Strings.Current.AudioSwitchFailed); }
         finally { if (cfg is not null) Marshal.FinalReleaseComObject(cfg); }
     }
 
@@ -77,7 +77,7 @@ sealed class WindowsAudio : IAudio
             }
             finally { Marshal.FinalReleaseComObject(dev); }
         }
-        catch (Exception e) when (e is COMException or InvalidCastException) { throw new PresetException("Não foi possível mudar o volume"); }
+        catch (Exception e) when (e is COMException or InvalidCastException) { throw new PresetException(Strings.Current.VolumeChangeFailed); }
         finally { if (en is not null) Marshal.FinalReleaseComObject(en); }
     }
 }

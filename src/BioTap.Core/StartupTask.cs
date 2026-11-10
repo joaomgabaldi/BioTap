@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using BioTap.Core.Text;
 
 namespace BioTap.Core;
 
@@ -24,7 +25,7 @@ public sealed class StartupTask(string taskName = "BioTap")
     public void Enable(string exePath)
     {
         if (!AclGuard.IsWritableOnlyByAdmins(exePath))
-            throw new InvalidOperationException("O BioTap precisa estar instalado em uma pasta só de administradores (Program Files).");
+            throw new InvalidOperationException(Strings.Current.StartupNeedsProgramFiles);
         Register(exePath);
     }
 
@@ -36,7 +37,7 @@ public sealed class StartupTask(string taskName = "BioTap")
             service = Connect();
             dynamic def = ((dynamic)service).NewTask(0);
             var user = WindowsIdentity.GetCurrent().Name;
-            def.RegistrationInfo.Description = "Inicia o BioTap ao entrar no Windows.";
+            def.RegistrationInfo.Description = Strings.Current.StartupTaskDescription;
             def.Principal.UserId = user;
             def.Principal.LogonType = LogonInteractiveToken;
             def.Principal.RunLevel = RunLevelHighest;

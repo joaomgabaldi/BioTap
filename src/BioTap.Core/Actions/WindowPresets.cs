@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using BioTap.Core.Config;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Actions;
 
@@ -15,30 +16,30 @@ public interface IWindows
 }
 
 /// <summary>Base for parameterless presets that act on the foreground window.</summary>
-public abstract class WindowPreset(string id, string name, string glyph, IWindows windows) : IPreset
+public abstract class WindowPreset(string id, Func<Strings, string> name, string glyph, IWindows windows) : IPreset
 {
     protected IWindows Windows => windows;
     public string Id => id;
-    public string DisplayName => name;
+    public string DisplayName => name(Strings.Current);
     public IconRef DefaultIcon => new("glyph", glyph);
     public string? ValidateParams(JsonObject p) => null;
-    public virtual string? CheckReady(JsonObject p) => windows.Foreground() == 0 ? "Nenhuma janela em foco" : null;
+    public virtual string? CheckReady(JsonObject p) => windows.Foreground() == 0 ? Strings.Current.NoWindowFocused : null;
     /// <summary>The foreground may have changed since CheckReady; 0 must never reach the OS calls.</summary>
-    protected nint Target() { var h = windows.Foreground(); return h != 0 ? h : throw new PresetException("Nenhuma janela em foco"); }
+    protected nint Target() { var h = windows.Foreground(); return h != 0 ? h : throw new PresetException(Strings.Current.NoWindowFocused); }
     public abstract Task RunAsync(JsonObject p, CancellationToken ct);
 }
 
-public sealed class TopmostPreset(IWindows w) : WindowPreset("topmost", "Sempre no topo", "E718", w)
+public sealed class TopmostPreset(IWindows w) : WindowPreset("topmost", s => s.PresetTopmost, "E718", w)
 {
     public override Task RunAsync(JsonObject p, CancellationToken ct) { Windows.ToggleTopmost(Target()); return Task.CompletedTask; }
 }
 
-public sealed class MinimizeOthersPreset(IWindows w) : WindowPreset("minimizeOthers", "Minimizar as outras janelas", "E73F", w)
+public sealed class MinimizeOthersPreset(IWindows w) : WindowPreset("minimizeOthers", s => s.PresetMinimizeOthers, "E73F", w)
 {
     public override Task RunAsync(JsonObject p, CancellationToken ct) { Windows.MinimizeAllExcept(Target()); return Task.CompletedTask; }
 }
 
-public sealed class LockPreset(IWindows w) : WindowPreset("lock", "Bloquear o Windows", "E72E", w)
+public sealed class LockPreset(IWindows w) : WindowPreset("lock", s => s.PresetLock, "E72E", w)
 {
     public override string? CheckReady(JsonObject p) => null;
     public override Task RunAsync(JsonObject p, CancellationToken ct) { Windows.Lock(); return Task.CompletedTask; }
