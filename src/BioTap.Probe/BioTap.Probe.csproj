@@ -3,6 +3,8 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>BioTap.Probe</RootNamespace>
+    <AssemblyTitle>BioTap Probe</AssemblyTitle>
+    <Description>Diagnóstico do leitor de digital.</Description>
   </PropertyGroup>
 
   <ItemGroup>

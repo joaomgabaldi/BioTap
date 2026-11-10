@@ -4,6 +4,9 @@
       <Platform Project="x64" />
     </Project>
     <Project Path="src/BioTap.Core/BioTap.Core.csproj" />
+    <Project Path="src/BioTap.Launcher/BioTap.Launcher.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/BioTap.Probe/BioTap.Probe.csproj" />
     <Project Path="src/BioTap.Service/BioTap.Service.csproj" />
   </Folder>

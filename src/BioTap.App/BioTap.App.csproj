@@ -5,6 +5,8 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <RootNamespace>BioTap.App</RootNamespace>
+    <AssemblyTitle>BioTap</AssemblyTitle>
+    <Description>Ações por toques no leitor de digital.</Description>
     <AssemblyName>BioTap</AssemblyName>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>

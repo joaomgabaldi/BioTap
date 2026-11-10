@@ -38,6 +38,24 @@ public class BoundaryTests
             || l.TrimStart().StartsWith("WinExec", StringComparison.OrdinalIgnoreCase));
     }
 
+    // Spec do launcher §6: nada do que chega ao launcher vira caminho ou argumento do processo elevado
+    [Fact]
+    public void Launcher_DoesNotReadArgumentsOrEnvironment()
+    {
+        var code = File.ReadAllText(Path.Combine(RepoRoot(), "src", "BioTap.Launcher", "Program.cs"));
+        foreach (var banned in new[] { "args", "GetCommandLineArgs", "CommandLine", "GetEnvironmentVariable", "ExpandEnvironmentVariables", "Arguments" })
+            Assert.DoesNotContain(banned, code);
+    }
+
+    [Fact]
+    public void Launcher_ManifestIsAsInvoker()
+    {
+        var manifest = File.ReadAllText(Path.Combine(RepoRoot(), "src", "BioTap.Launcher", "app.manifest"));
+        Assert.Contains("level=\"asInvoker\"", manifest);
+        Assert.DoesNotContain("requireAdministrator", manifest);
+        Assert.DoesNotContain("highestAvailable", manifest);
+    }
+
     [Fact]
     public void HandwrittenCode_HasNoUnsafe()
     {
