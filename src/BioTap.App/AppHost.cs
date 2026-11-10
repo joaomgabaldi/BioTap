@@ -21,6 +21,9 @@ sealed class AppHost(DispatcherQueue ui)
     readonly CancellationTokenSource stop = new();
     readonly ProblemNotifier notifier = new();
     readonly ShellLauncher launcher = new();
+    readonly Os.SendInputKeyboard keyboard = new();
+    readonly Os.Win32Windows windows = new();
+    readonly Os.WindowsAudio audio = new();
     PresetCatalog presets = null!;
     ServiceConnection connection = null!;
     TapRouter router = null!;
@@ -39,27 +42,45 @@ sealed class AppHost(DispatcherQueue ui)
     public ServiceConnection Connection => connection;
     public TapRouter Router => router;
     public string StatusText => PanelModel.TrayTooltip(connectionState, sensorState);
+    public bool SensorReady => connectionState == ConnectionState.Connected && sensorState == SensorState.Ok;
+    public bool StatusProblem => PanelModel.IsProblem(connectionState, sensorState);
 
     public void Start()
     {
-        presets = new PresetCatalog([new OpenTargetPreset(launcher), new RunCommandPreset(launcher)]);
+        presets = new PresetCatalog(
+        [
+            new OpenTargetPreset(launcher), new RunCommandPreset(launcher),
+            new ShortcutPreset(keyboard),
+            new KeyPreset("copy", "Copiar", "E8C8", keyboard, Vk.Control, 0x43),
+            new KeyPreset("paste", "Colar", "E77F", keyboard, Vk.Control, 0x56),
+            new KeyPreset("mute", "Silenciar ou reativar o som", "E74F", keyboard, Vk.VolumeMute),
+            new KeyPreset("playPause", "Tocar ou pausar", "E768", keyboard, Vk.MediaPlayPause),
+            new VolumeStepPreset(keyboard, up: true), new VolumeStepPreset(keyboard, up: false),
+            new TypeTextPreset(keyboard),
+            new TopmostPreset(windows), new MinimizeOthersPreset(windows), new LockPreset(windows),
+            new AudioCyclePreset(audio), new VolumeSetPreset(audio),
+            new ScreenshotPreset(new Os.ScreenCapture(ui), windows, () => DateTime.Now),
+            new QrCodePreset(new Os.WinRtClipboard(ui), new Qr.QrWindow(ui)),
+            new SequencePreset(() => presets, TimeProvider.System),
+        ]);
         Reload();
 
         overlay = new OverlayWindow();
         panel = new PanelWindow();
-        panel.ItemClicked += id => OpenSettings(id);
-        panel.GearClicked += () => OpenSettings(null);
+        // Mesmo caminho de um toque; o painel já se escondeu, então presets de janela agem na janela que estava na frente
+        panel.ItemClicked += id => { if (loaded.Config.Actions.FirstOrDefault(a => a.Id == id && a.Enabled) is { } a) router.Test(a); };
+        panel.GearClicked += OpenSettings;
 
         tray = new TrayIcon();
         tray.Clicked += TogglePanel;
-        tray.SettingsRequested += () => OpenSettings(null);
+        tray.SettingsRequested += OpenSettings;
         tray.ExitRequested += Exit;
 
         router = new TapRouter(() => loaded.Config, presets);
         router.Outcome += o => ui.TryEnqueue(() => Shell.Ui.Run(() =>
         {
             var c = loaded.Config;
-            if (c.Overlay.Enabled) overlay.Show(o, TimeSpan.FromMilliseconds(c.Overlay.DurationMs));
+            if (c.Overlay.Enabled) overlay.Show(o, TimeSpan.FromMilliseconds(c.Overlay.DurationMs), panel.Bounds);
         }, "overlay"));
 
         connection = new ServiceConnection(() => new PipeClient(PipeServerName, ServiceExe), TimeProvider.System);
@@ -86,8 +107,8 @@ sealed class AppHost(DispatcherQueue ui)
         foreach (var e in loaded.Errors) Program.Log.Write("WARN", "Config: " + e);
     }
 
-    /// <summary>One preferences window; reopened after it is closed. <paramref name="actionId"/> opens that action's editor.</summary>
-    void OpenSettings(Guid? actionId)
+    /// <summary>One preferences window; reopened after it is closed.</summary>
+    void OpenSettings()
     {
         try
         {
@@ -96,7 +117,7 @@ sealed class AppHost(DispatcherQueue ui)
                 settings = new Settings.SettingsWindow(this);
                 settings.Closed += () => settings = null;
             }
-            settings.Show(actionId);
+            settings.Show();
         }
         catch (Exception e)
         {

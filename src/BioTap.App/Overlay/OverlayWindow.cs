@@ -1,80 +1,124 @@
 using BioTap.App.Shell;
 using BioTap.Core.Actions;
-using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.Graphics;
 using Windows.Win32;
-using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace BioTap.App.Overlay;
 
 /// <summary>
-/// Feedback pill above the taskbar (spec §4). Never takes focus or clicks: the action may target the window the
-/// user is in (paste, always-on-top, minimize others).
+/// Confirmation pill (approved mockup docs/mockups/confirmacao.html): the action's icon and name on the same glass
+/// as the panel, above the taskbar or above the open panel. Never takes focus or clicks: the action may target the
+/// window the user is in (paste, always-on-top, minimize others). One pill: a new outcome replaces it in sequence.
 /// </summary>
 sealed class OverlayWindow
 {
-    const int Height = 48, MaxWidth = 560, MinWidth = 160;
-    readonly Window window;
-    readonly HWND hwnd;
-    readonly FontIcon icon = new() { FontSize = 20 };
-    readonly TextBlock title = new() { FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-    readonly TextBlock detail = new() { FontSize = 12, Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    public const double MaxWidth = 360;
+    readonly GlassWindow glass;
+    readonly Border host = new();
     readonly DispatcherQueueTimer hideTimer;
 
     public OverlayWindow()
     {
-        window = new Window
-        {
-            SystemBackdrop = new ActiveAcrylicBackdrop(),
-            Content = new Border
-            {
-                Padding = new Thickness(16, 0, 16, 0),
-                Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center, Children = { icon, title, detail } },
-            },
-        };
-        if (window.AppWindow.Presenter is OverlappedPresenter p)
-        {
-            p.SetBorderAndTitleBar(false, false);
-            p.IsResizable = false;
-            p.IsMaximizable = false;
-            p.IsMinimizable = false;
-            p.IsAlwaysOnTop = true;
-        }
-        window.AppWindow.IsShownInSwitchers = false;
+        // TRANSPARENT passes clicks through; NOACTIVATE keeps the focus where the user is typing
+        glass = new GlassWindow(host, WINDOW_EX_STYLE.WS_EX_NOACTIVATE | WINDOW_EX_STYLE.WS_EX_TRANSPARENT | WINDOW_EX_STYLE.WS_EX_TOPMOST);
+        // Keep the pill out of screenshots (the action runs after the overlay is shown); fails on Windows older than 10 2004, where it may show up
+        _ = PInvoke.SetWindowDisplayAffinity(glass.Hwnd, WINDOW_DISPLAY_AFFINITY.WDA_EXCLUDEFROMCAPTURE);
 
-        hwnd = new HWND(WinRT.Interop.WindowNative.GetWindowHandle(window));
-        var ex = PInvoke.GetWindowLong(hwnd, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE);
-        // TRANSPARENT needs LAYERED to pass clicks through; a layered window needs its alpha set or it is never drawn
-        ex |= (int)(WINDOW_EX_STYLE.WS_EX_NOACTIVATE | WINDOW_EX_STYLE.WS_EX_TRANSPARENT | WINDOW_EX_STYLE.WS_EX_TOOLWINDOW | WINDOW_EX_STYLE.WS_EX_TOPMOST | WINDOW_EX_STYLE.WS_EX_LAYERED);
-        PInvoke.SetWindowLong(hwnd, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE, ex);
-        PInvoke.SetLayeredWindowAttributes(hwnd, default, 255, LAYERED_WINDOW_ATTRIBUTES_FLAGS.LWA_ALPHA);
-
-        hideTimer = window.DispatcherQueue.CreateTimer();
+        hideTimer = glass.Window.DispatcherQueue.CreateTimer();
         hideTimer.IsRepeating = false;
-        hideTimer.Tick += (_, _) => Ui.Run(window.AppWindow.Hide, "overlay hide");
+        // Every exit ends by presenting the next queued outcome, if any
+        hideTimer.Tick += (_, _) => Ui.Run(() => glass.Hide(Next), "overlay hide");
     }
 
-    /// <summary>Call on the UI thread.</summary>
-    public void Show(ActionOutcome o, TimeSpan duration)
+    /// <summary>
+    /// Shows <paramref name="o"/>. Every outcome gets its own pill: one already on screen finishes rising, then
+    /// sinks at once (without waiting for its time) and the next one rises. <paramref name="panel"/> is the open
+    /// panel's bounds, to stay above it. Call on the UI thread.
+    /// </summary>
+    public void Show(ActionOutcome o, TimeSpan duration, RectInt32? panel)
     {
-        icon.Glyph = Glyphs.For(o);
-        icon.Foreground = o.Kind == OutcomeKind.Failed ? new SolidColorBrush(Colors.IndianRed) : null;
-        title.Text = o.Title;
-        detail.Text = o.Detail ?? "";
-        detail.Visibility = o.Detail is null ? Visibility.Collapsed : Visibility.Visible;
+        queue.Enqueue((o, duration, panel));
+        if (!glass.IsOnScreen) Next();
+        // Shown or rising: leave as soon as the entrance is over. Leaving: its exit already calls Next.
+        else if (glass.IsShown) Restart(MinVisible - (Environment.TickCount64 - shownAt));
+    }
 
-        // Width estimated from the text in DIPs, capped, then scaled for the target monitor
-        var dips = Math.Clamp(80 + 8 * (o.Title.Length + (o.Detail?.Length ?? 0)), MinWidth, MaxWidth);
-        Placement.AboveTaskbar(window.AppWindow, hwnd, scale => ((int)(dips * scale), (int)(Height * scale)));
-        window.AppWindow.Show(activateWindow: false);
+    readonly Queue<(ActionOutcome, TimeSpan, RectInt32?)> queue = new();
+    long shownAt;
+    // The entrance plus the two frames it waits for the new layout
+    static readonly long MinVisible = (long)Theme.EnterDuration.TotalMilliseconds + 50;
 
+    void Restart(long ms)
+    {
         hideTimer.Stop();
-        hideTimer.Interval = duration;
+        hideTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(1, ms));
         hideTimer.Start();
+    }
+
+    void Next()
+    {
+        if (!queue.TryDequeue(out var item)) return;
+        var (o, duration, panel) = item;
+        var content = Content(o);
+        // Pinned to the top-left: in the one frame where the window already has its new size but XAML still draws the
+        // previous layout, the content stays where it belongs instead of shifting by half the change (centered text got cut)
+        content.HorizontalAlignment = HorizontalAlignment.Left;
+        content.VerticalAlignment = VerticalAlignment.Top;
+        var area = panel is { } p ? DisplayArea.GetFromRect(p, DisplayAreaFallback.Primary) : Placement.UnderCursor();
+        var scale = glass.ScaleOn(area);
+        content.Measure(new Windows.Foundation.Size(MaxWidth, double.PositiveInfinity));
+        var size = GlassWindow.SizeFor(content.DesiredSize, scale);
+        RectInt32 Place(SizeInt32 s) => panel is { } anchor ? Placement.Above(area, anchor, s) : Placement.AboveTaskbar(area, s);
+
+        host.Child = content;
+        glass.Show(Place(size), scale, activate: false);
+        shownAt = Environment.TickCount64;
+        Restart(queue.Count > 0 ? MinVisible : (long)duration.TotalMilliseconds);
+    }
+
+    /// <summary>
+    /// The pill's content: icon and name; errors keep their glyph and add the safe detail line. Also drawn as the
+    /// preview in the preferences.
+    /// </summary>
+    public static FrameworkElement Content(ActionOutcome o)
+    {
+        FrameworkElement icon = o.Kind is OutcomeKind.Ran && o.Icon is { } own
+            ? Icons.Element(own, 23)
+            : new FontIcon { Glyph = Glyphs.For(o), FontSize = 23 };
+        if (icon is FontIcon f)
+            f.Foreground = o.Kind switch
+            {
+                OutcomeKind.Ran => Theme.Res("BioTapAccentLightBrush"),
+                OutcomeKind.Failed => Theme.Res("BioTapErrorBrush"),
+                _ => Theme.Res("BioTapTextMutedBrush"),
+            };
+        icon.VerticalAlignment = VerticalAlignment.Center;
+
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
+        text.Children.Add(new TextBlock
+        {
+            Text = o.Title, FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = Theme.Res("BioTapTextBrush"),
+            TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        if (o.Detail is { } detail)
+            text.Children.Add(new TextBlock
+            {
+                Text = detail, FontSize = 12, Foreground = Theme.Res("BioTapTextMutedBrush"),
+                TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+
+        var grid = new Grid { Padding = new Thickness(17, 14, 17, 14), MinHeight = 52, ColumnSpacing = 12, MaxWidth = MaxWidth };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(icon);
+        grid.Children.Add(text);
+        return grid;
     }
 }

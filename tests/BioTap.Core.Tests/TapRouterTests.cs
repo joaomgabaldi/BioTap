@@ -16,11 +16,20 @@ sealed class FakePreset(string id) : IPreset
     public TaskCompletionSource? Gate { get; set; }
     public string? Invalid { get; set; }
     public int Runs;
+    public Action? OnRun { get; set; }
+    public bool HangUntilCancelled { get; set; }
+    public CancellationToken Seen;
+    public TimeSpan? MaxRun { get; set; }
+    public bool SystemFeedback { get; set; }
+    public TimeSpan MaxRunTime(JsonObject p) => MaxRun ?? TimeSpan.FromSeconds(60);
     public string? ValidateParams(JsonObject p) => Invalid;
     public string? CheckReady(JsonObject p) => NotReady;
     public async Task RunAsync(JsonObject p, CancellationToken ct)
     {
         Interlocked.Increment(ref Runs);
+        OnRun?.Invoke();
+        Seen = ct;
+        if (HangUntilCancelled) await Task.Delay(Timeout.Infinite, ct);
         if (Gate is not null) await Gate.Task;
         if (Throws is not null) throw Throws;
     }
@@ -57,6 +66,22 @@ public class TapRouterTests
         Assert.Equal("Dois", o.Title);
         Assert.Equal(new IconRef("glyph", "E70B"), o.Icon);
         await WaitUntil(() => preset.Runs == 1);
+    }
+
+    [Fact]
+    public async Task Route_SystemFeedback_NoRanButFailureStillShown()
+    {
+        preset.SystemFeedback = true; // o Windows já mostra o volume na tela
+        var r = Router(A(1));
+        r.OnTaps(1);
+        await WaitUntil(() => preset.Runs == 1);
+        await Task.Delay(50);
+        Assert.Empty(outcomes);
+
+        preset.Throws = new InvalidOperationException("falhou");
+        r.OnTaps(1);
+        await WaitUntil(() => outcomes.Any(o => o.Kind == OutcomeKind.Failed));
+        Assert.DoesNotContain(outcomes, o => o.Kind == OutcomeKind.Ran);
     }
 
     [Fact]

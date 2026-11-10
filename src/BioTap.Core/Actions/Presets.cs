@@ -18,6 +18,10 @@ public interface IPreset
     /// <summary>Check right before running (file exists, clipboard has text…); null = ok.</summary>
     string? CheckReady(JsonObject p);
     Task RunAsync(JsonObject p, CancellationToken ct);
+    /// <summary>Time the router lets this run before giving up.</summary>
+    TimeSpan MaxRunTime(JsonObject p) => TimeSpan.FromSeconds(60);
+    /// <summary>Windows already shows the result (volume/mute flyout): no confirmation on success, errors still show.</summary>
+    bool SystemFeedback => false;
 }
 
 public sealed class PresetCatalog(IEnumerable<IPreset> presets) : IPresetCatalog

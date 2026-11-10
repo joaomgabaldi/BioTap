@@ -102,6 +102,39 @@ public class TapRouterReviewTests
     }
 
     [Fact]
+    public async Task TapRouter_UsesPresetMaxRunTime()
+    {
+        var time = new FakeTimeProvider();
+        var p = new FakePreset("fake") { Gate = new TaskCompletionSource(), MaxRun = TimeSpan.FromSeconds(120) };
+        Router([p], time, A(1)).OnTaps(1);
+        await WaitUntil(() => p.Runs == 1);
+        time.Advance(TimeSpan.FromSeconds(61));
+        await Task.Delay(100); // timers fire synchronously on Advance; this only lets a wrong 60 s timeout surface
+        Assert.DoesNotContain(outcomes, o => o.Kind == OutcomeKind.Failed);
+        time.Advance(TimeSpan.FromSeconds(60));
+        await WaitUntil(() => outcomes.Any(o => o.Kind == OutcomeKind.Failed));
+        Assert.Equal("Tempo esgotado", outcomes.Single(o => o.Kind == OutcomeKind.Failed).Detail);
+    }
+
+    [Fact]
+    public async Task Sequence_HungStep_ReportsTheStepTimeout_NotTheGenericOne()
+    {
+        var time = new FakeTimeProvider();
+        var step = new FakePreset("hang") { HangUntilCancelled = true };
+        PresetCatalog? cat = null;
+        var seq = new SequencePreset(() => cat!, time);
+        cat = new PresetCatalog([step, seq]);
+        var args = new JsonObject { ["steps"] = new JsonArray(new JsonObject { ["preset"] = "hang", ["params"] = new JsonObject(), ["delayMs"] = 0 }) };
+        var action = new ActionConfig(Guid.NewGuid(), 1, "Seq", true, new IconRef("glyph", "E70B"), "sequence", args);
+        var r = new TapRouter(() => AppConfig.Default with { Actions = [action] }, cat, time);
+        r.Outcome += outcomes.Enqueue;
+        r.OnTaps(1);
+        await WaitUntil(() => step.Runs == 1);
+        for (var i = 0; i < 80 && !outcomes.Any(o => o.Kind == OutcomeKind.Failed); i++) { time.Advance(TimeSpan.FromSeconds(1)); await Task.Delay(5); }
+        Assert.Equal("Passo 1 (Fake hang): Tempo esgotado", outcomes.Single(o => o.Kind == OutcomeKind.Failed).Detail);
+    }
+
+    [Fact]
     public void Catalog_DuplicateIds_NamesTheId()
     {
         var e = Assert.Throws<InvalidOperationException>(() => new PresetCatalog([new FakePreset("x"), new FakePreset("x")]));

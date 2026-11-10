@@ -20,6 +20,10 @@ static class Params
 
     public static bool Bool(JsonObject p, string name, bool fallback)
         => p[name] is JsonValue v && v.TryGetValue<bool>(out var b) ? b : fallback;
+
+    /// <summary>Whole JSON numbers only: strings, fractions and booleans give null.</summary>
+    public static int? Int(JsonObject p, string name)
+        => p[name] is JsonValue v && v.TryGetValue<int>(out var i) ? i : null;
 }
 
 /// <summary>openTarget: { "target": absolute path | http(s) / ms-* URI, "args": string? }.</summary>

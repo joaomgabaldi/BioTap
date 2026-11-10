@@ -11,3 +11,9 @@ WTSGetActiveConsoleSessionId
 OpenProcessToken
 TOKEN_ACCESS_MASK
 GetWindowThreadProcessId
+GetFinalPathNameByHandle
+SetFileInformationByHandle
+FILE_DISPOSITION_INFO
+FILE_INFO_BY_HANDLE_CLASS
+CreateFile
+FILE_ACCESS_RIGHTS

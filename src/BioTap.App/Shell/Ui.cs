@@ -17,4 +17,20 @@ static class Ui
         try { await body(); }
         catch (Exception e) { Program.Log.Write("ERROR", $"{what}: {e}"); }
     }
+
+    /// <summary>
+    /// Runs <paramref name="action"/> on the n-th next XAML frame. A window resize or show takes effect at once
+    /// but XAML draws the change with the next frame: frame 1 draws what was just set, frame 2 comes after it.
+    /// </summary>
+    public static void AfterFrames(int n, Action action)
+    {
+        EventHandler<object>? handler = null;
+        handler = (_, _) =>
+        {
+            if (--n > 0) return;
+            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= handler;
+            Run(action, "after frames");
+        };
+        Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += handler;
+    }
 }

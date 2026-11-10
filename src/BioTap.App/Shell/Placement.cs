@@ -2,27 +2,28 @@ using BioTap.Core;
 using Microsoft.UI.Windowing;
 using Windows.Graphics;
 using Windows.Win32;
-using Windows.Win32.Foundation;
 
 namespace BioTap.App.Shell;
 
 static class Placement
 {
-    /// <summary>
-    /// Centers the window above the taskbar of the monitor under the cursor. The window is first moved to that
-    /// monitor so <paramref name="sizeAt"/> gets that monitor's DPI scale (monitors can differ).
-    /// </summary>
-    public static void AboveTaskbar(AppWindow window, HWND hwnd, Func<double, (int Width, int Height)> sizeAt)
+    /// <summary>The display under the cursor (the one the user is looking at).</summary>
+    public static DisplayArea UnderCursor()
+        => DisplayArea.GetFromPoint(PInvoke.GetCursorPos(out var p) ? new PointInt32(p.X, p.Y) : new PointInt32(0, 0), DisplayAreaFallback.Primary);
+
+    /// <summary>Centered 8 px above the taskbar of <paramref name="area"/>, from its real work area.</summary>
+    public static RectInt32 AboveTaskbar(DisplayArea area, SizeInt32 size)
     {
-        var area = DisplayArea.GetFromPoint(Cursor(), DisplayAreaFallback.Primary);
-        window.Move(new PointInt32(area.WorkArea.X, area.WorkArea.Y));
-        var (width, height) = sizeAt(PInvoke.GetDpiForWindow(hwnd) / 96.0);
-        var (x, y) = TaskbarGeometry.Place(
-            new ScreenRect(area.WorkArea.X, area.WorkArea.Y, area.WorkArea.Width, area.WorkArea.Height),
-            new ScreenRect(area.OuterBounds.X, area.OuterBounds.Y, area.OuterBounds.Width, area.OuterBounds.Height),
-            width, height);
-        window.MoveAndResize(new RectInt32(x, y, width, height));
+        var (x, y) = TaskbarGeometry.Place(Rect(area.WorkArea), Rect(area.OuterBounds), size.Width, size.Height);
+        return new RectInt32(x, y, size.Width, size.Height);
     }
 
-    static PointInt32 Cursor() => PInvoke.GetCursorPos(out var p) ? new PointInt32(p.X, p.Y) : new PointInt32(0, 0);
+    /// <summary>Centered 8 px above <paramref name="anchor"/> (the open panel), kept inside the work area.</summary>
+    public static RectInt32 Above(DisplayArea area, RectInt32 anchor, SizeInt32 size)
+    {
+        var (x, y) = TaskbarGeometry.PlaceAbove(Rect(area.WorkArea), Rect(anchor), size.Width, size.Height);
+        return new RectInt32(x, y, size.Width, size.Height);
+    }
+
+    static ScreenRect Rect(RectInt32 r) => new(r.X, r.Y, r.Width, r.Height);
 }
