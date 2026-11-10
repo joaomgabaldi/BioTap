@@ -3,7 +3,7 @@ using System.Security.Principal;
 
 namespace BioTap.Core.Tests;
 
-/// <summary>Spec do launcher §3.3/§6: o evento do painel só vale se for nosso; o usuário só pode sinalizar e ler.</summary>
+/// <summary>Spec do launcher §3.3/§6: o evento do painel só vale se tiver exatamente a ACL que o app cria.</summary>
 public class ShowPanelEventAclTests
 {
     static readonly SecurityIdentifier User = new("S-1-5-21-1-2-3-1001");
@@ -22,12 +22,21 @@ public class ShowPanelEventAclTests
     }
 
     [Fact]
-    public void IsValid_AcceptsAdminOnly()
-        => Assert.True(ShowPanelEventAcl.IsValid("O:BAD:P(A;;GA;;;SY)(A;;GA;;;BA)", User));
+    public void IsValid_AcceptsKernelRendering() // como o Windows devolve a ACL do evento criado pelo app (lido em 2026-11-10)
+        => Assert.True(ShowPanelEventAcl.IsValid($"O:BAD:P(A;;0x1f0003;;;SY)(A;;0x1f0003;;;BA)(A;;DCRC;;;{User})", User));
+
+    // Evento de outro componente do sistema (ex.: alcançado por link simbólico do Object Manager): só de admin, mas não é nosso
+    [Fact]
+    public void IsValid_RejectsOtherAdminOnlyEvent()
+        => Assert.False(ShowPanelEventAcl.IsValid("O:BAD:P(A;;GA;;;SY)(A;;GA;;;BA)", User));
 
     [Fact]
-    public void IsValid_AcceptsUserWithSignalOnly()
-        => Assert.True(ShowPanelEventAcl.IsValid($"O:BAD:P(A;;GA;;;BA)(A;;0x2;;;{User})", User));
+    public void IsValid_RejectsSubsetOfOurAcl()
+        => Assert.False(ShowPanelEventAcl.IsValid($"O:BAD:P(A;;0x1f0003;;;BA)(A;;0x20002;;;{User})", User));
+
+    [Fact]
+    public void IsValid_RejectsSystemOwner() // nosso evento tem dono Administradores
+        => Assert.False(ShowPanelEventAcl.IsValid($"O:SYD:P(A;;0x1f0003;;;SY)(A;;0x1f0003;;;BA)(A;;0x20002;;;{User})", User));
 
     [Fact]
     public void IsValid_RejectsUserOwner() // squat: um processo sem admin não consegue pôr Administradores como dono
@@ -62,6 +71,6 @@ public class ShowPanelEventAclTests
         => Assert.False(ShowPanelEventAcl.IsValid("O:BAD:P(A;;GA;;;BA)(OA;;GA;;;WD)", User));
 
     [Fact]
-    public void IsValid_AcceptsDenyAce()
-        => Assert.True(ShowPanelEventAcl.IsValid("O:BAD:P(D;;GA;;;WD)(A;;GA;;;BA)", User));
+    public void IsValid_RejectsExtraDenyAce()
+        => Assert.False(ShowPanelEventAcl.IsValid($"O:BAD:P(D;;GA;;;WD)(A;;0x1f0003;;;SY)(A;;0x1f0003;;;BA)(A;;0x20002;;;{User})", User));
 }

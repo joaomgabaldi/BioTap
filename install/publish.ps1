@@ -26,3 +26,6 @@ dotnet publish (Join-Path $repo 'src\BioTap.Launcher') -c Release -o $Out
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish (launcher) falhou.' }
 # AOT de verdade: um exe só, sem a DLL gerenciada ao lado (senão faltaria o runtime no PC)
 if (-not (Test-Path (Join-Path $Out 'BioTapLauncher.exe')) -or (Test-Path (Join-Path $Out 'BioTapLauncher.dll'))) { throw 'O publish do launcher nao saiu em Native AOT.' }
+# O manifest embutido (texto no recurso RT_MANIFEST) tem de pedir asInvoker: senao o atalho voltaria a pedir UAC
+$launcherBytes = [IO.File]::ReadAllText((Join-Path $Out 'BioTapLauncher.exe'), [Text.Encoding]::GetEncoding(28591))
+if ($launcherBytes -notmatch 'level="asInvoker"' -or $launcherBytes -match 'requireAdministrator|highestAvailable') { throw 'O launcher saiu sem o manifest asInvoker.' }
