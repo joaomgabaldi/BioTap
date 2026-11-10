@@ -8,5 +8,14 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <!-- Release vai para o instalador público: os binários não levam o caminho local da máquina de build -->
     <PathMap Condition="'$(Configuration)' == 'Release'">$(MSBuildThisFileDirectory)=/_/</PathMap>
+    <!-- Metadados dos exe (Propriedades > Detalhes); o instalador lê a versão do BioTap.exe -->
+    <Version>1.0.1</Version>
+    <Product>BioTap</Product>
+    <Company>João M. B. Gabaldi</Company>
+    <Authors>João M. B. Gabaldi</Authors>
+    <Copyright>Copyright © 2026 joaomgabaldi</Copyright>
+    <NeutralLanguage>pt-BR</NeutralLanguage>
+    <!-- Versão do produto "1.0.1", sem o hash do commit que o SourceLink acrescenta -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 </Project>

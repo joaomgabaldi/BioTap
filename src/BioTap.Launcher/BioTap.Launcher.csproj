@@ -3,6 +3,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <RootNamespace>BioTap.Launcher</RootNamespace>
+    <AssemblyTitle>BioTap</AssemblyTitle>
+    <Description>Abre o BioTap ou mostra o painel, sem pedir admin.</Description>
     <AssemblyName>BioTapLauncher</AssemblyName>
     <!-- Spec do launcher §3.1: exe pequeno sem admin (asInvoker); Native AOT em vez de um self-contained de ~70 MB -->
     <PublishAot>true</PublishAot>

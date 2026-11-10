@@ -5,15 +5,27 @@
 #ifndef PublishDir
   #define PublishDir "..\artifacts\publish"
 #endif
-#define AppVersion GetVersionNumbersString(PublishDir + "\App\BioTap.exe")
+; Versão definida no Directory.Build.props: "1.0.1" (produto) e "1.0.1.0" (arquivo)
+#define AppVersion GetStringFileInfo(PublishDir + "\App\BioTap.exe", "ProductVersion")
+#define FileVersion GetVersionNumbersString(PublishDir + "\App\BioTap.exe")
 
 [Setup]
 AppId={{9FF42EA0-7445-4A0C-AC2B-9823D8E22538}
 AppName=BioTap
 AppVersion={#AppVersion}
-AppVerName=BioTap {#AppVersion}
+AppVerName=BioTap
 AppPublisher=João M. B. Gabaldi
-VersionInfoVersion={#AppVersion}
+AppPublisherURL=https://github.com/joaomgabaldi/BioTap
+AppSupportURL=https://github.com/joaomgabaldi/BioTap/issues
+AppUpdatesURL=https://github.com/joaomgabaldi/BioTap/releases
+AppCopyright=Copyright © 2026 joaomgabaldi
+VersionInfoVersion={#FileVersion}
+VersionInfoProductVersion={#FileVersion}
+VersionInfoProductTextVersion={#AppVersion}
+VersionInfoProductName=BioTap
+VersionInfoCompany=João M. B. Gabaldi
+VersionInfoCopyright=Copyright © 2026 joaomgabaldi
+VersionInfoDescription=Instalador do BioTap
 ; O app e o servico procuram os arquivos em %ProgramFiles%\BioTap: a pasta nao pode mudar
 DefaultDirName={autopf}\BioTap
 DisableDirPage=yes
