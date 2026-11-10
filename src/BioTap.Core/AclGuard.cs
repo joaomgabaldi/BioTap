@@ -37,26 +37,6 @@ public static class AclGuard
     }
 
     /// <summary>
-    /// For named kernel objects (mutex, event): owner is SYSTEM/Administrators and every allow ACE is for one of them.
-    /// Used to tell our own objects from ones a non-admin process created first under the same name (squatting).
-    /// </summary>
-    public static bool IsAdminOnly(string sddl)
-    {
-        try
-        {
-            var sd = new RawSecurityDescriptor(sddl);
-            if (!IsTrusted(sd.Owner) || sd.DiscretionaryAcl is null) return false;
-            foreach (var ace in sd.DiscretionaryAcl)
-                if (ace is CommonAce { AceQualifier: AceQualifier.AccessAllowed } a && !IsTrusted(a.SecurityIdentifier)) return false;
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
     /// The app's data folder (lock, logs, config). Created missing with only SYSTEM + Administrators, nothing inherited
     /// (ProgramData lets Users create subfolders). Fails closed: an existing folder others can write, a reparse point
     /// or an unreadable ACL returns false.

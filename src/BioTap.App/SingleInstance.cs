@@ -7,13 +7,11 @@ namespace BioTap.App;
 /// <summary>
 /// Single instance (spec §7). The authority is <see cref="InstanceLock"/>: a file held exclusively in the admin-only
 /// ProgramData\BioTap folder, which a non-admin process cannot create or hold. A named event only carries the
-/// "show panel" signal from a later BioTap.exe; it is used only if its ACL proves it is ours (named objects can be
-/// created first by any process).
+/// "show panel" signal from a later BioTap.exe or from BioTapLauncher.exe (sem admin: o usuário só pode sinalizar);
+/// it is used only if its ACL proves it is ours (named objects can be created first by any process).
 /// </summary>
 sealed class SingleInstance : IDisposable
 {
-    const string EventName = @"Local\BioTap.ShowPanel";
-
     readonly InstanceLock instanceLock;
     readonly EventWaitHandle? showPanel;
     readonly ManualResetEvent stop = new(false);
@@ -41,8 +39,8 @@ sealed class SingleInstance : IDisposable
     {
         try
         {
-            using var ev = EventWaitHandle.OpenExisting(EventName);
-            if (IsAdminOnly(ev)) ev.Set();
+            using var ev = EventWaitHandle.OpenExisting(ShowPanelEventAcl.Name);
+            if (IsOurs(ev)) ev.Set();
         }
         catch (Exception)
         {
@@ -53,15 +51,11 @@ sealed class SingleInstance : IDisposable
     static EventWaitHandle? CreateOrRejectEvent(FileLog log)
     {
         var security = new EventWaitHandleSecurity();
-        security.SetAccessRuleProtection(true, false);
-        var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-        security.SetOwner(admins);
-        security.AddAccessRule(new EventWaitHandleAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), EventWaitHandleRights.FullControl, AccessControlType.Allow));
-        security.AddAccessRule(new EventWaitHandleAccessRule(admins, EventWaitHandleRights.FullControl, AccessControlType.Allow));
+        security.SetSecurityDescriptorSddlForm(ShowPanelEventAcl.Sddl(WindowsIdentity.GetCurrent().User!));
         try
         {
-            var ev = EventWaitHandleAcl.Create(false, EventResetMode.AutoReset, EventName, out var createdNew, security);
-            if (createdNew || IsAdminOnly(ev)) return ev;
+            var ev = EventWaitHandleAcl.Create(false, EventResetMode.AutoReset, ShowPanelEventAcl.Name, out var createdNew, security);
+            if (createdNew || IsOurs(ev)) return ev;
             ev.Dispose();
         }
         catch (Exception e) when (e is UnauthorizedAccessException or WaitHandleCannotBeOpenedException or IOException)
@@ -81,9 +75,9 @@ sealed class SingleInstance : IDisposable
         }) { IsBackground = true, Name = "BioTap show-panel" }.Start();
     }
 
-    static bool IsAdminOnly(EventWaitHandle e)
+    static bool IsOurs(EventWaitHandle e)
     {
-        try { return AclGuard.IsAdminOnly(e.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Owner | AccessControlSections.Access)); }
+        try { return ShowPanelEventAcl.IsValid(e.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Owner | AccessControlSections.Access), WindowsIdentity.GetCurrent().User!); }
         catch (Exception) { return false; }
     }
 
