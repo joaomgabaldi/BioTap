@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>BioTap.Launcher</RootNamespace>
+    <AssemblyName>BioTapLauncher</AssemblyName>
+    <!-- Spec do launcher §3.1: exe pequeno sem admin (asInvoker); Native AOT em vez de um self-contained de ~70 MB -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\BioTap.App\Assets\BioTap.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Só este arquivo do Core: o resto usa COM dynamic, que não roda em AOT -->
+    <Compile Include="..\BioTap.Core\ShowPanelEventAcl.cs" Link="ShowPanelEventAcl.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.369">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
