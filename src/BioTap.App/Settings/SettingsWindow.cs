@@ -52,7 +52,7 @@ sealed class SettingsWindow
         IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed,
         IsPaneToggleButtonVisible = false,
         IsSettingsVisible = false,
-        OpenPaneLength = 215,
+        OpenPaneLength = 250, // "Appearance and feedback" cabe sem cortar
     };
     readonly InfoBar banner = new() { IsClosable = true, Margin = new Thickness(0, 0, 0, 12) };
     readonly ContentControl pageHost = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch };

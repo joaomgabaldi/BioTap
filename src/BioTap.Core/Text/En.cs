@@ -244,4 +244,8 @@ sealed class En : Strings
     // Core: validações sem acento achadas depois
     public override string VolumeStepRange => "Choose an even step from 2 to 50%.";
     public override string ShotChooseTarget => "Choose Screen or Current window.";
+
+    // Interruptores com texto (o padrão do WinUI segue o idioma do Windows, não o do app)
+    public override string On => "On";
+    public override string Off => "Off";
 }

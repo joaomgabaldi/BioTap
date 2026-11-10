@@ -174,8 +174,8 @@ static class PresetEditors
     {
         var shell = new ComboBox { Header = "Shell", Items = { "powershell", "cmd" }, SelectedItem = S("shell") == "cmd" ? "cmd" : "powershell" };
         var command = new TextBox { Header = Strings.Current.Command, Text = S("command"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 90, FontFamily = new FontFamily("Cascadia Mono, Consolas") };
-        var show = new ToggleSwitch { Header = Strings.Current.ShowWindow, IsOn = B("showWindow", true) };
-        var admin = new ToggleSwitch { Header = Strings.Current.RunAsAdmin, IsOn = B("runAsAdmin", false) };
+        var show = new ToggleSwitch { Header = Strings.Current.ShowWindow, IsOn = B("showWindow", true), OnContent = Strings.Current.On, OffContent = Strings.Current.Off };
+        var admin = new ToggleSwitch { Header = Strings.Current.RunAsAdmin, IsOn = B("runAsAdmin", false), OnContent = Strings.Current.On, OffContent = Strings.Current.Off };
         return (new StackPanel { Spacing = 12, Children = { shell, command, show, admin } }, () => new JsonObject
         {
             ["shell"] = (string)shell.SelectedItem, ["command"] = command.Text, ["showWindow"] = show.IsOn, ["runAsAdmin"] = admin.IsOn,

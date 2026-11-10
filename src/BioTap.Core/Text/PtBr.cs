@@ -236,4 +236,8 @@ sealed class PtBr : Strings
     // Core: validações sem acento achadas depois
     public override string VolumeStepRange => "Escolha um passo par de 2 a 50%.";
     public override string ShotChooseTarget => "Escolha Tela ou Janela atual.";
+
+    // Interruptores com texto (o padrão do WinUI segue o idioma do Windows, não o do app)
+    public override string On => "Ativado";
+    public override string Off => "Desativado";
 }

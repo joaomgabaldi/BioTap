@@ -251,4 +251,8 @@ public abstract class Strings
     // Core: validações sem acento achadas depois
     public abstract string VolumeStepRange { get; }
     public abstract string ShotChooseTarget { get; }
+
+    // Interruptores com texto (o padrão do WinUI segue o idioma do Windows, não o do app)
+    public abstract string On { get; }
+    public abstract string Off { get; }
 }
