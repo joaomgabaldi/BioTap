@@ -21,7 +21,7 @@ function Stop-BioTap {
         Stop-Service $svc -Force
         (Get-Service $svc).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
     }
-    Get-Process BioTap -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-Process BioTap, BioTapLauncher -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
 # ProgramData e gravavel por usuarios comuns. Uma pasta BioTap ja existente so e reaproveitada se for confiavel

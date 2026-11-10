@@ -50,7 +50,9 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignorever
 Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\BioTap"; Filename: "{app}\App\BioTap.exe"
+; Os atalhos abrem o launcher sem admin: com o app aberto, mostra o painel sem UAC (o BioTap.exe pede UAC)
+Name: "{autoprograms}\BioTap"; Filename: "{app}\BioTapLauncher.exe"; IconFilename: "{app}\App\BioTap.exe"
+Name: "{autodesktop}\BioTap"; Filename: "{app}\BioTapLauncher.exe"; IconFilename: "{app}\App\BioTap.exe"
 
 [Code]
 const
@@ -77,7 +79,7 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   // Comando inline: na primeira instalacao o setup.ps1 ainda nao existe em {app}
   if not PowerShell('-Command "Stop-Service BioTap.Service -Force -ErrorAction SilentlyContinue; ' +
-      'Get-Process BioTap -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Milliseconds 500; ' +
+      'Get-Process BioTap, BioTapLauncher -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Milliseconds 500; ' +
       'if (Get-Service BioTap.Service -ErrorAction SilentlyContinue | Where-Object Status -ne Stopped) { exit 1 }"') then
     Result := 'Não foi possível parar o serviço ou o app do BioTap. ' + LogHint;
 end;
