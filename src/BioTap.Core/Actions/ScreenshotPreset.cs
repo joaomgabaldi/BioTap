@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using BioTap.Core.Config;
 using Windows.Win32;
 using Windows.Win32.Storage.FileSystem;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Actions;
 
@@ -27,12 +28,12 @@ public static class ScreenshotSaver
     {
         try
         {
-            if (!Directory.Exists(folder)) return "Pasta não encontrada";
-            return new DirectoryInfo(folder).Attributes.HasFlag(FileAttributes.ReparsePoint) ? "Pasta inválida" : null;
+            if (!Directory.Exists(folder)) return Strings.Current.FolderNotFound;
+            return new DirectoryInfo(folder).Attributes.HasFlag(FileAttributes.ReparsePoint) ? Strings.Current.FolderInvalid : null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            return "Pasta inválida";
+            return Strings.Current.FolderInvalid;
         }
     }
 
@@ -54,14 +55,14 @@ public static class ScreenshotSaver
             {
                 handle.Dispose();
                 if (File.Exists(path)) continue;
-                throw new PresetException("Não foi possível salvar a imagem");
+                throw new PresetException(Strings.Current.ImageNotSaved);
             }
             var fs = new FileStream(handle, FileAccess.Write, bufferSize: 0); // unbuffered: Dispose cannot fail on a pending write and replace the PresetException
             using (fs)
             {
                 try
                 {
-                    if (!IsInside(FinalPath(fs), full)) throw new PresetException("Pasta inválida");
+                    if (!IsInside(FinalPath(fs), full)) throw new PresetException(Strings.Current.FolderInvalid);
                     write(fs, png);
                     fs.Flush();
                     return path;
@@ -70,11 +71,11 @@ public static class ScreenshotSaver
                 {
                     // Nothing is deleted by name (the folder may have been swapped): the open handle marks it for deletion
                     try { SetDelete(fs); } catch (IOException) { /* best effort */ }
-                    throw e is PresetException ? e : new PresetException("Não foi possível salvar a imagem");
+                    throw e is PresetException ? e : new PresetException(Strings.Current.ImageNotSaved);
                 }
             }
         }
-        throw new PresetException("Não foi possível salvar a imagem");
+        throw new PresetException(Strings.Current.ImageNotSaved);
     }
 
     static void SetDelete(FileStream fs)
@@ -88,7 +89,7 @@ public static class ScreenshotSaver
     {
         var buf = new char[32768];
         var len = PInvoke.GetFinalPathNameByHandle(fs.SafeFileHandle, buf, GETFINALPATHNAMEBYHANDLE_FLAGS.FILE_NAME_NORMALIZED);
-        if (len == 0 || len >= buf.Length) throw new PresetException("Pasta inválida");
+        if (len == 0 || len >= buf.Length) throw new PresetException(Strings.Current.FolderInvalid);
         return new string(buf, 0, (int)len);
     }
 
@@ -110,7 +111,7 @@ public sealed class ScreenshotPreset(IScreenCapture capture, IWindows windows, F
     readonly string defaultDir = defaultFolder ?? DefaultFolder;
 
     public string Id => "screenshot";
-    public string DisplayName => "Captura de tela";
+    public string DisplayName => Strings.Current.PresetScreenshot;
     public IconRef DefaultIcon => new("glyph", "E722");
 
     // Missing fields mean the defaults (the editor writes them all, so a saved action is complete)
@@ -121,20 +122,20 @@ public sealed class ScreenshotPreset(IScreenCapture capture, IWindows windows, F
     public string? ValidateParams(JsonObject p)
     {
         if (Target(p) is not ("screen" or "window")) return "Escolha Tela ou Janela atual.";
-        if (!Save(p) && !Copy(p)) return "Marque Salvar, Copiar ou os dois.";
+        if (!Save(p) && !Copy(p)) return Strings.Current.ShotSaveOrCopy;
         if (Save(p))
         {
             var f = Params.Str(p, "folder");
             if (string.IsNullOrWhiteSpace(f) || f.Any(char.IsControl) || f.StartsWith(@"\\", StringComparison.Ordinal)
                 || f.StartsWith("//", StringComparison.Ordinal) || !Path.IsPathFullyQualified(f))
-                return "Escolha uma pasta (caminho completo).";
+                return Strings.Current.ShotChooseFolder;
         }
         return null;
     }
 
     public string? CheckReady(JsonObject p)
     {
-        if (Target(p) == "window" && windows.Foreground() == 0) return "Nenhuma janela em foco";
+        if (Target(p) == "window" && windows.Foreground() == 0) return Strings.Current.NoWindowFocused;
         if (!Save(p)) return null;
         var folder = Params.Str(p, "folder")!;
         EnsureDefaultFolder(folder);
@@ -161,8 +162,8 @@ public sealed class ScreenshotPreset(IScreenCapture capture, IWindows windows, F
         if (Target(p) == "window")
         {
             var h = windows.Foreground();
-            if (h == 0) throw new PresetException("Nenhuma janela em foco");
-            png = capture.CaptureWindow(h) ?? throw new PresetException("Janela não encontrada");
+            if (h == 0) throw new PresetException(Strings.Current.NoWindowFocused);
+            png = capture.CaptureWindow(h) ?? throw new PresetException(Strings.Current.WindowNotFound);
         }
         else png = capture.CaptureMonitorUnderMouse();
 

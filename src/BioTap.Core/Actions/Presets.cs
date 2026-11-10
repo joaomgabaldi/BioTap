@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using BioTap.Core.Config;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Actions;
 
@@ -39,5 +40,5 @@ public sealed class PresetCatalog(IEnumerable<IPreset> presets) : IPresetCatalog
     public IReadOnlyCollection<IPreset> All => byId.Values;
     public IPreset? Get(string id) => byId.GetValueOrDefault(id);
     public bool IsKnown(string preset) => byId.ContainsKey(preset);
-    public string? ValidateParams(string preset, JsonObject p) => byId.TryGetValue(preset, out var x) ? x.ValidateParams(p) : "Preset desconhecido.";
+    public string? ValidateParams(string preset, JsonObject p) => byId.TryGetValue(preset, out var x) ? x.ValidateParams(p) : Strings.Current.UnknownPresetDot;
 }

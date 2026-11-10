@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using BioTap.Core.Config;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Actions;
 
@@ -18,18 +19,18 @@ public interface IAudio
 public sealed class AudioCyclePreset(IAudio audio) : IPreset
 {
     public string Id => "audioCycle";
-    public string DisplayName => "Trocar saída de áudio";
+    public string DisplayName => Strings.Current.PresetAudioCycle;
     public IconRef DefaultIcon => new("glyph", "E7F5");
 
     public string? ValidateParams(JsonObject p)
     {
-        if (p["deviceIds"] is not JsonArray a || a.Count < 2) return "Escolha pelo menos 2 dispositivos.";
-        if (a.Count > 10) return "No máximo 10 dispositivos.";
+        if (p["deviceIds"] is not JsonArray a || a.Count < 2) return Strings.Current.AudioMinDevices;
+        if (a.Count > 10) return Strings.Current.AudioMaxDevices;
         HashSet<string> seen = [];
         foreach (var n in a)
         {
-            if (n is not JsonValue v || !v.TryGetValue<string>(out var id) || id.Length == 0) return "Dispositivo inválido.";
-            if (!seen.Add(id)) return "Dispositivo repetido.";
+            if (n is not JsonValue v || !v.TryGetValue<string>(out var id) || id.Length == 0) return Strings.Current.AudioInvalidDevice;
+            if (!seen.Add(id)) return Strings.Current.AudioRepeatedDevice;
         }
         return null;
     }
@@ -38,8 +39,8 @@ public sealed class AudioCyclePreset(IAudio audio) : IPreset
     {
         var cycle = Ids(p);
         var present = audio.Outputs().Select(d => d.Id).ToHashSet();
-        if (!cycle.Any(present.Contains)) return "Nenhum dispositivo da lista está conectado";
-        return Next(cycle, present, audio.ActiveOutputId()) is null ? "Nenhum outro dispositivo da lista está conectado" : null;
+        if (!cycle.Any(present.Contains)) return Strings.Current.AudioNoneConnected;
+        return Next(cycle, present, audio.ActiveOutputId()) is null ? Strings.Current.AudioNoOtherConnected : null;
     }
 
     public Task RunAsync(JsonObject p, CancellationToken ct)
@@ -69,12 +70,12 @@ public sealed class AudioCyclePreset(IAudio audio) : IPreset
 public sealed class VolumeSetPreset(IAudio audio) : IPreset
 {
     public string Id => "volumeSet";
-    public string DisplayName => "Definir volume";
+    public string DisplayName => Strings.Current.PresetVolumeSet;
     public IconRef DefaultIcon => new("glyph", "E767");
 
-    public string? ValidateParams(JsonObject p) => Params.Int(p, "percent") is >= 0 and <= 100 ? null : "Escolha de 0 a 100%.";
+    public string? ValidateParams(JsonObject p) => Params.Int(p, "percent") is >= 0 and <= 100 ? null : Strings.Current.VolumeRange;
 
-    public string? CheckReady(JsonObject p) => audio.ActiveOutputId() is null ? "Nenhuma saída de áudio ativa" : null;
+    public string? CheckReady(JsonObject p) => audio.ActiveOutputId() is null ? Strings.Current.AudioNoActiveOutput : null;
 
     public Task RunAsync(JsonObject p, CancellationToken ct)
     {

@@ -38,8 +38,8 @@ public sealed class KeyboardPresetTests
     [Fact]
     public void SystemFeedback_OnlyVolumeAndMute()
     {
-        IPreset[] own = [new KeyPreset("mute", "m", "E74F", kb, Vk.VolumeMute), new VolumeStepPreset(kb, up: true), new VolumeStepPreset(kb, up: false)];
-        IPreset[] pill = [new KeyPreset("playPause", "p", "E768", kb, Vk.MediaPlayPause), new KeyPreset("copy", "c", "E8C8", kb, Vk.Control, 0x43), new ShortcutPreset(kb)];
+        IPreset[] own = [new KeyPreset("mute", _ => "m", "E74F", kb, Vk.VolumeMute), new VolumeStepPreset(kb, up: true), new VolumeStepPreset(kb, up: false)];
+        IPreset[] pill = [new KeyPreset("playPause", _ => "p", "E768", kb, Vk.MediaPlayPause), new KeyPreset("copy", _ => "c", "E8C8", kb, Vk.Control, 0x43), new ShortcutPreset(kb)];
         Assert.All(own, p => Assert.True(p.SystemFeedback));
         Assert.All(pill, p => Assert.False(p.SystemFeedback));
     }
@@ -117,10 +117,10 @@ public sealed class KeyboardPresetTests
         Assert.Null(preset.ValidateParams(new JsonObject { ["text"] = new string('a', 10_000) }));
     }
 
-    KeyPreset Copy => new("copy", "Copiar", "E8C8", kb, Vk.Control, 0x43);
-    KeyPreset Paste => new("paste", "Colar", "E77F", kb, Vk.Control, 0x56);
-    KeyPreset Mute => new("mute", "Silenciar", "E74F", kb, Vk.VolumeMute);
-    KeyPreset PlayPause => new("playPause", "Tocar/Pausar", "E768", kb, Vk.MediaPlayPause);
+    KeyPreset Copy => new("copy", _ => "Copiar", "E8C8", kb, Vk.Control, 0x43);
+    KeyPreset Paste => new("paste", _ => "Colar", "E77F", kb, Vk.Control, 0x56);
+    KeyPreset Mute => new("mute", _ => "Silenciar", "E74F", kb, Vk.VolumeMute);
+    KeyPreset PlayPause => new("playPause", _ => "Tocar/Pausar", "E768", kb, Vk.MediaPlayPause);
 
     [Fact]
     public async Task KeyPresets_SendTheirKeys()

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using BioTap.Core.Config;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Actions;
 
@@ -16,7 +17,7 @@ public sealed class QrCodePreset(IClipboardText clipboard, IQrWindow window, Tim
     const int MaxChars = 2900, MaxBytes = 2953; // QR version 40-L byte capacity
 
     public string Id => "qrCode";
-    public string DisplayName => "QR code do texto copiado";
+    public string DisplayName => Strings.Current.PresetQrCode;
     public IconRef DefaultIcon => new("glyph", "ED14");
 
     public string? ValidateParams(JsonObject p) => null;
@@ -25,8 +26,8 @@ public sealed class QrCodePreset(IClipboardText clipboard, IQrWindow window, Tim
 
     static string? Problem(string? text)
     {
-        if (string.IsNullOrWhiteSpace(text)) return "Não há texto copiado";
-        return text.Length > MaxChars || Encoding.UTF8.GetByteCount(text) > MaxBytes ? "O texto copiado passa de 2.900 caracteres" : null;
+        if (string.IsNullOrWhiteSpace(text)) return Strings.Current.QrNoText;
+        return text.Length > MaxChars || Encoding.UTF8.GetByteCount(text) > MaxBytes ? Strings.Current.QrTooLong : null;
     }
 
     public async Task RunAsync(JsonObject p, CancellationToken ct)
@@ -36,6 +37,6 @@ public sealed class QrCodePreset(IClipboardText clipboard, IQrWindow window, Tim
         using var abandon = CancellationTokenSource.CreateLinkedTokenSource(ct);
         try { await window.ShowAsync(text!, abandon.Token).WaitAsync(TimeSpan.FromSeconds(2), time ?? TimeProvider.System, ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { abandon.Cancel(); throw; }
-        catch (Exception) { abandon.Cancel(); throw new PresetException("Não foi possível mostrar o QR code"); }
+        catch (Exception) { abandon.Cancel(); throw new PresetException(Strings.Current.QrCannotShow); }
     }
 }

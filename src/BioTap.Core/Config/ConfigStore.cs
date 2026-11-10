@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Config;
 
@@ -29,18 +30,18 @@ public static class ConfigStore
         {
             // Hold the file open denying writes while checking and reading it (same pattern as ServiceConfig)
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (!isSecure(path)) return Broken("A configuração pode ser alterada por usuários sem admin; ela foi ignorada.");
-            if (fs.Length > MaxFileBytes) return Broken("A configuração passa de 1 MB.");
+            if (!isSecure(path)) return Broken(Strings.Current.ConfigInsecure);
+            if (fs.Length > MaxFileBytes) return Broken(Strings.Current.ConfigTooBig);
 
             var node = JsonNode.Parse(fs, documentOptions: new JsonDocumentOptions { MaxDepth = 32 });
             if (node is not JsonObject root || root["version"] is not JsonValue v || !v.TryGetValue<int>(out var version))
-                return Broken("A configuração não tem versão.");
+                return Broken(Strings.Current.ConfigNoVersion);
             if (version != AppConfig.CurrentVersion)
-                return Broken($"Configuração da versão {version} não é suportada por este BioTap.");
+                return Broken(Strings.Current.ConfigVersionUnsupported(version));
 
             var config = root.Deserialize<AppConfig>(Json);
             if (config?.Overlay is null || config.Actions is null || config.Actions.Any(IsIncomplete))
-                return Broken("A configuração está incompleta.");
+                return Broken(Strings.Current.ConfigIncomplete);
 
             var errors = ConfigValidator.Validate(config, presets);
             var invalid = errors.Where(e => e.ActionId is not null).Select(e => e.ActionId!.Value).ToHashSet();
@@ -55,7 +56,7 @@ public static class ConfigStore
         }
         catch (Exception e)
         {
-            return Broken($"A configuração não pôde ser lida ({e.GetType().Name}).");
+            return Broken(Strings.Current.ConfigUnreadable(e.GetType().Name));
         }
     }
 
@@ -71,7 +72,7 @@ public static class ConfigStore
     public static void Save(string path, AppConfig config, IPresetCatalog presets, Func<string, bool> isSecure)
     {
         if (File.Exists(path) && Load(path, isSecure, presets) is { ReadOnly: true } existing)
-            throw new InvalidOperationException("A configuração atual não pode ser sobrescrita: " + string.Join(" ", existing.Errors));
+            throw new InvalidOperationException(Strings.Current.ConfigCannotOverwrite + string.Join(" ", existing.Errors));
         var errors = ConfigValidator.Validate(config, presets);
         if (errors.Count > 0) throw new InvalidOperationException(string.Join(" ", errors.Select(e => e.Message)));
 

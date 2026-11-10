@@ -56,6 +56,31 @@ public class BoundaryTests
         Assert.DoesNotContain("highestAvailable", manifest);
     }
 
+    // Spec da tradução §7: texto visível em português só nas classes de idioma (Core/Text). Logs ficam em português.
+    [Theory]
+    [InlineData("BioTap.Core")]
+    public void UserVisibleText_IsInStringsOnly(string project)
+    {
+        var root = Path.Combine(RepoRoot(), "src", project);
+        var literal = new System.Text.RegularExpressions.Regex(@"""(?:[^""\\]|\\.)*""");
+        var portuguese = new System.Text.RegularExpressions.Regex("[ãáàâéêíóôõúçÃÁÀÂÉÊÍÓÔÕÚÇ]");
+        var log = new System.Text.RegularExpressions.Regex(@"\.Write\(|Log(Information|Warning|Error|Debug|Critical|Trace)\(");
+        var offenders = new List<string>();
+        foreach (var f in Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+        {
+            var rel = Path.GetRelativePath(root, f);
+            if (rel.StartsWith("obj") || rel.StartsWith("bin") || rel.StartsWith("Text" + Path.DirectorySeparatorChar)) continue;
+            var lines = File.ReadAllLines(f);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].TrimStart();
+                if (line.StartsWith("//") || log.IsMatch(line) || line.Contains("// ids gravados no config.json: não traduzir")) continue;
+                if (literal.Matches(line).Any(m => portuguese.IsMatch(m.Value))) offenders.Add($"{rel}:{i + 1}");
+            }
+        }
+        Assert.True(offenders.Count == 0, string.Join(Environment.NewLine, offenders));
+    }
+
     [Fact]
     public void HandwrittenCode_HasNoUnsafe()
     {

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using BioTap.Core.Config;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Actions;
 
@@ -13,7 +14,7 @@ public sealed class SequencePreset(Func<PresetCatalog> catalog, TimeProvider tim
     static readonly TimeSpan Slack = TimeSpan.FromSeconds(5);
 
     public string Id => "sequence";
-    public string DisplayName => "Sequência de ações";
+    public string DisplayName => Strings.Current.PresetSequence;
     public IconRef DefaultIcon => new("glyph", "E8FD");
 
     sealed record Step(string Preset, JsonObject Params, int DelayMs);
@@ -21,18 +22,18 @@ public sealed class SequencePreset(Func<PresetCatalog> catalog, TimeProvider tim
     /// <summary>Structure only (count, shape, delay, not nested); null error when fine.</summary>
     static (List<Step>? Steps, string? Error) Parse(JsonObject p)
     {
-        if (p["steps"] is not JsonArray arr || arr.Count is < 1 or > MaxSteps) return (null, "Uma sequência tem de 1 a 20 passos.");
+        if (p["steps"] is not JsonArray arr || arr.Count is < 1 or > MaxSteps) return (null, Strings.Current.SeqStepCount);
         var steps = new List<Step>();
         for (var i = 0; i < arr.Count; i++)
         {
-            if (arr[i] is not JsonObject s || Params.Str(s, "preset") is not { } preset) return (null, $"Passo {i + 1}: passo inválido.");
-            if (preset == "sequence") return (null, "Uma sequência não pode conter outra sequência.");
+            if (arr[i] is not JsonObject s || Params.Str(s, "preset") is not { } preset) return (null, Strings.Current.SeqStepInvalid(i + 1));
+            if (preset == "sequence") return (null, Strings.Current.SeqNoNested);
             var delay = s["delayMs"] is null ? 0 : Params.Int(s, "delayMs");
-            if (delay is not (>= 0 and <= MaxDelayMs)) return (null, "Espera de 0 a 10 s.");
+            if (delay is not (>= 0 and <= MaxDelayMs)) return (null, Strings.Current.SeqDelay);
             JsonObject args;
             if (s["params"] is null) args = [];
             else if (s["params"] is JsonObject o) args = o;
-            else return (null, $"Passo {i + 1}: parâmetros inválidos.");
+            else return (null, Strings.Current.SeqStepBadParams(i + 1));
             steps.Add(new Step(preset, args, delay.Value));
         }
         return (steps, null);
@@ -45,8 +46,8 @@ public sealed class SequencePreset(Func<PresetCatalog> catalog, TimeProvider tim
         var cat = catalog();
         for (var i = 0; i < steps.Count; i++)
         {
-            if (cat.Get(steps[i].Preset) is not { } preset) return $"Passo {i + 1}: preset desconhecido.";
-            if (preset.ValidateParams(steps[i].Params) is { } reason) return $"Passo {i + 1} ({preset.DisplayName}): {reason}";
+            if (cat.Get(steps[i].Preset) is not { } preset) return Strings.Current.SeqStepUnknown(i + 1);
+            if (preset.ValidateParams(steps[i].Params) is { } reason) return Strings.Current.SeqStepLabel(i + 1, preset.DisplayName) + reason;
         }
         return null;
     }
@@ -70,8 +71,8 @@ public sealed class SequencePreset(Func<PresetCatalog> catalog, TimeProvider tim
         for (var i = 0; i < steps.Count; i++)
         {
             var s = steps[i];
-            var preset = cat.Get(s.Preset) ?? throw new PresetException($"Passo {i + 1}: preset desconhecido.");
-            var label = $"Passo {i + 1} ({preset.DisplayName}): ";
+            var preset = cat.Get(s.Preset) ?? throw new PresetException(Strings.Current.SeqStepUnknown(i + 1));
+            var label = Strings.Current.SeqStepLabel(i + 1, preset.DisplayName);
             if (s.DelayMs > 0) await Task.Delay(TimeSpan.FromMilliseconds(s.DelayMs), time, ct);
             var max = preset.MaxRunTime(s.Params);
             // The step's own token is cancelled at its timeout, so a hung step stops instead of running on in the background
@@ -83,11 +84,11 @@ public sealed class SequencePreset(Func<PresetCatalog> catalog, TimeProvider tim
                 await preset.RunAsync(s.Params, stepCts.Token).WaitAsync(max, time, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (OperationCanceledException) when (timeout.IsCancellationRequested) { throw new PresetException(label + "Tempo esgotado"); }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested) { throw new PresetException(label + Strings.Current.TimedOut); }
             catch (PresetException e) when (e.Message.StartsWith(label, StringComparison.Ordinal)) { throw; }
-            catch (TimeoutException) { throw new PresetException(label + "Tempo esgotado"); }
+            catch (TimeoutException) { throw new PresetException(label + Strings.Current.TimedOut); }
             catch (PresetException e) { throw new PresetException(label + e.Message); }
-            catch (Exception) { throw new PresetException(label + "Erro ao executar"); }
+            catch (Exception) { throw new PresetException(label + Strings.Current.RunError); }
         }
     }
 }

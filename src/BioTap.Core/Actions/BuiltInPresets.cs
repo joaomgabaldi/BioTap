@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using BioTap.Core.Config;
+using BioTap.Core.Text;
 
 namespace BioTap.Core.Actions;
 
@@ -32,22 +33,22 @@ public sealed class OpenTargetPreset(ILauncher launcher) : IPreset
     const int MaxLength = 2048;
 
     public string Id => "openTarget";
-    public string DisplayName => "Abrir programa, arquivo ou URL";
+    public string DisplayName => Strings.Current.PresetOpenTarget;
     public IconRef DefaultIcon => new("glyph", "E8E5");
 
     public string? ValidateParams(JsonObject p)
     {
         var target = Params.Str(p, "target");
-        if (string.IsNullOrWhiteSpace(target)) return "Escolha o que abrir.";
-        if (target.Length > MaxLength) return "Caminho longo demais.";
-        if (target.Any(char.IsControl)) return "Caminho inválido.";
+        if (string.IsNullOrWhiteSpace(target)) return Strings.Current.OpenChooseTarget;
+        if (target.Length > MaxLength) return Strings.Current.OpenPathTooLong;
+        if (target.Any(char.IsControl)) return Strings.Current.OpenInvalidPath;
         if (Params.Str(p, "args") is { } args && (args.Length > MaxLength || args.Any(char.IsControl)))
-            return "Argumentos inválidos.";
+            return Strings.Current.OpenInvalidArgs;
         if (IsAllowedUri(target)) return null;
         // Network and device paths are refused (also with forward slashes): they can hang and send the
         // Windows credentials to another machine
-        if (Expand(target).StartsWith(@"\\", StringComparison.Ordinal)) return "Caminhos de rede não são aceitos.";
-        return Path.IsPathFullyQualified(Expand(target)) ? null : "Use um caminho completo (ex.: C:\\...) ou uma URL http(s).";
+        if (Expand(target).StartsWith(@"\\", StringComparison.Ordinal)) return Strings.Current.OpenNoNetwork;
+        return Path.IsPathFullyQualified(Expand(target)) ? null : Strings.Current.OpenNeedFullPath;
     }
 
     // %VAR% expands with the environment of this (elevated) app; for an admin who is also the user that is the same profile
@@ -58,7 +59,7 @@ public sealed class OpenTargetPreset(ILauncher launcher) : IPreset
         var target = Params.Str(p, "target")!;
         if (IsAllowedUri(target)) return null;
         var path = Expand(target);
-        return File.Exists(path) || Directory.Exists(path) ? null : "Arquivo não encontrado";
+        return File.Exists(path) || Directory.Exists(path) ? null : Strings.Current.FileNotFound;
     }
 
     public Task RunAsync(JsonObject p, CancellationToken ct)
@@ -84,19 +85,19 @@ public sealed class RunCommandPreset(ILauncher launcher) : IPreset
     const int MaxCommandLength = 8000;
 
     public string Id => "runCommand";
-    public string DisplayName => "Rodar comando";
+    public string DisplayName => Strings.Current.PresetRunCommand;
     public IconRef DefaultIcon => new("glyph", "E756");
 
     public string? ValidateParams(JsonObject p)
     {
         var shell = Params.Str(p, "shell");
-        if (shell is not ("powershell" or "cmd")) return "Escolha PowerShell ou cmd.";
+        if (shell is not ("powershell" or "cmd")) return Strings.Current.CmdChooseShell;
         var command = Params.Str(p, "command");
-        if (string.IsNullOrWhiteSpace(command)) return "Escreva o comando.";
-        if (command.Length > MaxCommandLength) return "Comando longo demais.";
-        if (command.Contains('\0')) return "Comando inválido.";
+        if (string.IsNullOrWhiteSpace(command)) return Strings.Current.CmdWriteCommand;
+        if (command.Length > MaxCommandLength) return Strings.Current.CmdTooLong;
+        if (command.Contains('\0')) return Strings.Current.CmdInvalid;
         // cmd /c takes a single line; a newline would start a second, unseen command
-        if (shell == "cmd" && command.Any(char.IsControl)) return "No cmd, o comando precisa ter uma linha só, sem caracteres de controle.";
+        if (shell == "cmd" && command.Any(char.IsControl)) return Strings.Current.CmdOneLine;
         return null;
     }
 
