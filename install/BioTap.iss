@@ -49,6 +49,26 @@ SetupLogging=yes
 
 [Languages]
 Name: "ptbr"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "en"; MessagesFile: "compiler:Default.isl"
+
+[CustomMessages]
+; Idioma do app: o setup grava em HKLM; o app usa até o usuário escolher outro em Preferências
+ptbr.LanguageCode=pt-BR
+en.LanguageCode=en
+ptbr.LogHint=Detalhes no log do instalador (%TEMP%\Setup Log *.txt).
+en.LogHint=Details in the setup log (%TEMP%\Setup Log *.txt).
+ptbr.StopFailed=Não foi possível parar o serviço ou o app do BioTap.
+en.StopFailed=Could not stop the BioTap service or app.
+ptbr.ConfigureFailed=Os arquivos foram instalados, mas registrar o serviço e a tarefa de logon falhou.
+en.ConfigureFailed=The files were installed, but registering the service and the logon task failed.
+ptbr.RemoveFailed=Não foi possível remover o serviço ou a tarefa de logon do BioTap.
+en.RemoveFailed=Could not remove the BioTap service or the logon task.
+ptbr.DeleteData=Apagar também as ações configuradas e os logs (%1)?
+en.DeleteData=Also delete the configured actions and the logs (%1)?
+
+[Registry]
+; Só admin escreve em HKLM: um processo sem admin não muda o idioma do app (spec da tradução §6)
+Root: HKLM; Subkey: "Software\BioTap"; ValueType: string; ValueName: "Language"; ValueData: "{cm:LanguageCode}"; Flags: uninsdeletekey
 
 [InstallDelete]
 ; Atualizacao: sem DLLs de versoes antigas misturadas com as novas
@@ -67,9 +87,6 @@ Name: "{autoprograms}\BioTap"; Filename: "{app}\BioTapLauncher.exe"; IconFilenam
 Name: "{autodesktop}\BioTap"; Filename: "{app}\BioTapLauncher.exe"; IconFilename: "{app}\App\BioTap.exe"
 
 [Code]
-const
-  LogHint = 'Detalhes no log do instalador (%TEMP%\Setup Log *.txt).';
-
 function PowerShell(const Args: String): Boolean;
 var
   Code: Integer;
@@ -93,13 +110,13 @@ begin
   if not PowerShell('-Command "Stop-Service BioTap.Service -Force -ErrorAction SilentlyContinue; ' +
       'Get-Process BioTap, BioTapLauncher -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Milliseconds 500; ' +
       'if (Get-Service BioTap.Service -ErrorAction SilentlyContinue | Where-Object Status -ne Stopped) { exit 1 }"') then
-    Result := 'Não foi possível parar o serviço ou o app do BioTap. ' + LogHint;
+    Result := CustomMessage('StopFailed') + ' ' + CustomMessage('LogHint');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if (CurStep = ssPostInstall) and not SetupScript('Configure') then
-    SuppressibleMsgBox('Os arquivos foram instalados, mas registrar o serviço e a tarefa de logon falhou. ' + LogHint,
+    SuppressibleMsgBox(CustomMessage('ConfigureFailed') + ' ' + CustomMessage('LogHint'),
       mbError, MB_OK, IDOK);
 end;
 
@@ -109,10 +126,10 @@ var
 begin
   // Depois da confirmação do usuário (InitializeUninstall roda antes dela) e antes de apagar os arquivos
   if (CurUninstallStep = usUninstall) and not SetupScript('Remove') then
-    SuppressibleMsgBox('Não foi possível remover o serviço ou a tarefa de logon do BioTap. ' + LogHint,
+    SuppressibleMsgBox(CustomMessage('RemoveFailed') + ' ' + CustomMessage('LogHint'),
       mbError, MB_OK, IDOK);
   Data := ExpandConstant('{commonappdata}\BioTap');
   if (CurUninstallStep = usPostUninstall) and DirExists(Data) and not UninstallSilent and
-     (MsgBox('Apagar também as ações configuradas e os logs (' + Data + ')?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
+     (MsgBox(FmtMessage(CustomMessage('DeleteData'), [Data]), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
     DelTree(Data, True, True, True);
 end;

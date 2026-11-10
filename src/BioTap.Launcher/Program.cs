@@ -32,7 +32,8 @@ static class Program
         }
         catch (Exception)
         {
-            PInvoke.MessageBox(HWND.Null, "Não foi possível abrir o BioTap.", "BioTap", MESSAGEBOX_STYLE.MB_ICONERROR);
+            // O launcher não lê a configuração (só admin lê), então a mensagem vai nos dois idiomas
+            PInvoke.MessageBox(HWND.Null, "Não foi possível abrir o BioTap.\nCould not open BioTap.", "BioTap", MESSAGEBOX_STYLE.MB_ICONERROR);
             return 1;
         }
     }
